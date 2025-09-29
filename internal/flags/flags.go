@@ -287,6 +287,13 @@ func RegisterSystemFlags(rootCmd *cobra.Command) {
 		"Label used for setting memory swappiness as nil when recreating the container, used for compatibility with podman",
 	)
 
+	flags.StringP(
+		"cpu-copy-mode",
+		"",
+		envString("WATCHTOWER_CPU_COPY_MODE"),
+		"CPU copy mode for container recreation, used for compatibility with Podman. Options: auto, full, none",
+	)
+
 	flags.IntP(
 		"lifecycle-uid",
 		"",
@@ -496,6 +503,12 @@ func RegisterNotificationFlags(rootCmd *cobra.Command) {
 		"notification-log-stdout",
 		envBool("WATCHTOWER_NOTIFICATION_LOG_STDOUT"),
 		"Write notification logs to stdout instead of logging (to stderr)")
+
+	flags.BoolP(
+		"notification-split-by-container",
+		"",
+		envBool("WATCHTOWER_NOTIFICATION_SPLIT_BY_CONTAINER"),
+		"Send separate notifications for each updated container instead of grouping them")
 }
 
 // RegisterGitFlags adds Git monitoring flags to the root command.
@@ -613,6 +626,7 @@ func SetDefaults() {
 	viper.SetDefault("WATCHTOWER_LOG_LEVEL", "info")
 	viper.SetDefault("WATCHTOWER_LOG_FORMAT", "auto")
 	viper.SetDefault("WATCHTOWER_DISABLE_MEMORY_SWAPPINESS", false)
+	viper.SetDefault("WATCHTOWER_CPU_COPY_MODE", "auto")
 	viper.SetDefault("WATCHTOWER_REGISTRY_TLS_SKIP", false)
 	viper.SetDefault("WATCHTOWER_REGISTRY_TLS_MIN_VERSION", "TLS1.2")
 }
@@ -964,12 +978,17 @@ func ProcessFlagAliases(flags *pflag.FlagSet) {
 	// Update schedule to match interval or default if needed.
 	if intervalChanged || !scheduleChanged {
 		interval, _ := flags.GetInt("interval")
-		if err := flags.Set("schedule", fmt.Sprintf("@every %ds", interval)); err != nil {
+
+		scheduleValue := fmt.Sprintf("@every %ds", interval)
+		if err := flags.Set("schedule", scheduleValue); err != nil {
 			logrus.WithError(err).
 				WithField("interval", interval).
 				Debug("Failed to set schedule from interval")
 		} else {
-			logrus.WithField("interval", interval).Debug("Set schedule from interval")
+			logrus.WithFields(logrus.Fields{
+				"interval": interval,
+				"schedule": scheduleValue,
+			}).Debug("Set default schedule from interval")
 		}
 	}
 
