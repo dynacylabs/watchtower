@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Chores
 
+- Update module github.com/nicholas-fedor/shoutrrr to v0.10.0 by @renovate[bot] in [#727](https://github.com/nicholas-fedor/watchtower/pull/727)
 - Update module github.com/nicholas-fedor/shoutrrr to v0.9.1 by @renovate[bot] in [#676](https://github.com/nicholas-fedor/watchtower/pull/676)
 - Update module github.com/nicholas-fedor/shoutrrr to v0.9.0 by @renovate[bot] in [#674](https://github.com/nicholas-fedor/watchtower/pull/674)
 - Update module github.com/spf13/viper to v1.21.0 by @renovate[bot] in [#650](https://github.com/nicholas-fedor/watchtower/pull/650)
@@ -486,7 +487,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Session report collection and report templates by @piksel
 - Pre-update lifecycle hook
 - Allow hostname override for notifiers by @nightah
-- * feat: custom user agent by @piksel
+- - feat: custom user agent by @piksel
 - Allow running periodic updates with enabled HTTP API by @DasSkelett
 - Check container config before update by @piksel
 - Feat/head failure toggle by @simskij
@@ -512,7 +513,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rolling restart by @osheroff
 - Skip updating containers where no local image info can be retrieved by @piksel
 - Make sure all shoutrrr notifications are sent by @CedricFinance
-- Warning if `WATCHTOWER_NO_PULL` and` WATCHTOWER_MONITOR_ONLY` are used simultaneously. by @m-sedl
+- Warning if `WATCHTOWER_NO_PULL` and`WATCHTOWER_MONITOR_ONLY` are used simultaneously. by @m-sedl
 - Lifecycle logs as Debug instead of Info by @MichaelSp
 - Allows flags containing sensitive stuff to be passed as files by @tammert
 - Image of running container no longer needed locally by @tammert
