@@ -199,6 +199,30 @@ var notificationSplitByContainer bool
 // controlling CPU limit copying behavior for compatibility with different container runtimes like Podman.
 var cpuCopyMode string
 
+// gitAuthToken holds the Git authentication token for private repository access.
+//
+// It is set during preRun via the --git-auth-token flag or the WATCHTOWER_GIT_AUTH_TOKEN environment variable,
+// enabling authentication for GitHub/GitLab repositories during container updates.
+var gitAuthToken string
+
+// gitUsername holds the Git username for basic authentication.
+//
+// It is set during preRun via the --git-username flag or the WATCHTOWER_GIT_USERNAME environment variable,
+// used for username/password authentication with Git repositories.
+var gitUsername string
+
+// gitPassword holds the Git password for basic authentication.
+//
+// It is set during preRun via the --git-password flag or the WATCHTOWER_GIT_PASSWORD environment variable,
+// used for username/password authentication with Git repositories.
+var gitPassword string
+
+// gitSSHKeyPath holds the path to the SSH private key file for Git authentication.
+//
+// It is set during preRun via the --git-ssh-key-path flag or the WATCHTOWER_GIT_SSH_KEY_PATH environment variable,
+// enabling SSH key-based authentication for Git repositories.
+var gitSSHKeyPath string
+
 // rootCmd represents the root command for the Watchtower CLI, serving as the entry point for all subcommands.
 //
 // It defines the base usage string, short and long descriptions, and assigns lifecycle hooks (PreRun and Run)
@@ -348,6 +372,12 @@ func preRun(cmd *cobra.Command, _ []string) {
 	warnOnHeadPullFailed, _ := flagsSet.GetString("warn-on-head-failure")
 	disableMemorySwappiness, _ := flagsSet.GetBool("disable-memory-swappiness")
 	cpuCopyMode, _ = flagsSet.GetString("cpu-copy-mode")
+
+	// Retrieve Git authentication flags.
+	gitAuthToken, _ = flagsSet.GetString("git-auth-token")
+	gitUsername, _ = flagsSet.GetString("git-username")
+	gitPassword, _ = flagsSet.GetString("git-password")
+	gitSSHKeyPath, _ = flagsSet.GetString("git-ssh-key-path")
 
 	// Warn about potential redundancy in flag combinations that could result in no action.
 	if monitorOnly && noPull {
@@ -588,19 +618,6 @@ func runMain(cfg RunConfig) int {
 		return 0
 	}
 
-	// Handle immediate update on startup, then continue with periodic updates.
-	if cfg.UpdateOnStart {
-		select {
-		case v := <-updateLock:
-			defer func() { updateLock <- v }()
-
-			metric := runUpdatesWithNotifications(context.Background(), cfg.Filter, cleanup)
-			metrics.Default().RegisterScan(metric)
-		default:
-			logrus.Debug("Skipped update on start as another update is already running.")
-		}
-	}
-
 	// Check for and resolve conflicts with multiple Watchtower instances.
 	cleanupImageIDs := make(map[types.ImageID]bool)
 	if err := actions.CheckForMultipleWatchtowerInstances(client, cleanup, scope, cleanupImageIDs); err != nil {
@@ -622,7 +639,9 @@ func runMain(cfg RunConfig) int {
 
 	// Schedule and execute periodic updates, handling errors or shutdown.
 	if !cfg.EnableUpdateAPI || cfg.UnblockHTTPAPI {
-		runUpgradesOnSchedule(ctx, cfg.Command, cfg.Filter, cfg.FilterDesc, updateLock, cleanup)
+		if err := runUpgradesOnSchedule(ctx, cfg.Command, cfg.Filter, cfg.FilterDesc, updateLock, cleanup); err != nil {
+			return 1
+		}
 	}
 
 	// Default to failure if execution completes unexpectedly.
@@ -859,10 +878,21 @@ func writeStartupMessage(c *cobra.Command, sched time.Time, filtering string, sc
 
 	// Configure the logger based on whether startup messages should be suppressed.
 	startupLog := setupStartupLogger(noStartupMessage)
-	startupLog.Info("Watchtower ", meta.Version, " using Docker API v", client.GetVersion())
+
+	var version string
+	if client != nil {
+		version = client.GetVersion()
+	}
+
+	startupLog.Info("Watchtower ", meta.Version, " using Docker API v", version)
 
 	// Log details about configured notifiers or lack thereof.
-	logNotifierInfo(startupLog, notifier.GetNames())
+	var notifierNames []string
+	if notifier != nil {
+		notifierNames = notifier.GetNames()
+	}
+
+	logNotifierInfo(startupLog, notifierNames)
 
 	// Log filtering information, using structured logging for scope when set
 	if scope != "" {
@@ -909,7 +939,9 @@ func setupStartupLogger(noStartupMessage bool) *logrus.Entry {
 
 	log := logrus.NewEntry(logrus.StandardLogger())
 
-	notifier.StartNotification()
+	if notifier != nil {
+		notifier.StartNotification()
+	}
 
 	return log
 }
@@ -985,6 +1017,7 @@ func logScheduleInfo(log *logrus.Entry, c *cobra.Command, sched time.Time) {
 //
 // It sets up a cron scheduler, runs updates at specified intervals, and ensures graceful shutdown on interrupt
 // signals (SIGINT, SIGTERM) or context cancellation, handling concurrency with a lock channel.
+// If update-on-start is enabled, it triggers the first update immediately before starting the scheduler.
 //
 // Parameters:
 //   - ctx: The context controlling the scheduler’s lifecycle, enabling shutdown on cancellation.
@@ -1000,7 +1033,7 @@ func runUpgradesOnSchedule(
 	filtering string,
 	lock chan bool,
 	cleanup bool,
-) {
+) error {
 	// Initialize lock if not provided, ensuring single-update concurrency.
 	if lock == nil {
 		lock = make(chan bool, 1)
@@ -1010,31 +1043,47 @@ func runUpgradesOnSchedule(
 	// Create a new cron scheduler for managing periodic updates.
 	scheduler := cron.New()
 
-	// Add the update function to the cron schedule, handling concurrency and metrics.
-	logrus.WithField("schedule_spec", scheduleSpec).Debug("Attempting to add cron function")
+	// Define the update function to be used both for scheduled runs and immediate execution.
+	updateFunc := func() {
+		select {
+		case v := <-lock:
+			defer func() { lock <- v }()
 
-	if err := scheduler.AddFunc(
-		scheduleSpec,
-		func() {
-			select {
-			case v := <-lock:
-				defer func() { lock <- v }()
-				metric := runUpdatesWithNotifications(ctx, filter, cleanup)
-				metrics.Default().RegisterScan(metric)
-			default:
-				metrics.Default().RegisterScan(nil)
-				logrus.Debug("Skipped another update already running.")
-			}
-			nextRuns := scheduler.Entries()
-			if len(nextRuns) > 0 {
-				logrus.Debug("Scheduled next run: " + nextRuns[0].Next.String())
-			}
-		}); err != nil {
-		logrus.WithError(err).Error("Failed to schedule updates, continuing without scheduling")
+			metric := runUpdatesWithNotifications(ctx, filter, cleanup)
+			metrics.Default().RegisterScan(metric)
+		default:
+			metrics.Default().RegisterScan(nil)
+			logrus.Debug("Skipped another update already running.")
+		}
+
+		nextRuns := scheduler.Entries()
+		if len(nextRuns) > 0 {
+			logrus.Debug("Scheduled next run: " + nextRuns[0].Next.String())
+		}
+	}
+
+	// Add the update function to the cron schedule, handling concurrency and metrics.
+	if scheduleSpec != "" {
+		if err := scheduler.AddFunc(
+			scheduleSpec,
+			updateFunc); err != nil {
+			return fmt.Errorf("failed to schedule updates: %w", err)
+		}
 	}
 
 	// Log startup message with the first scheduled run time.
-	writeStartupMessage(c, scheduler.Entries()[0].Schedule.Next(time.Now()), filtering, scope)
+	var nextRun time.Time
+	if len(scheduler.Entries()) > 0 {
+		nextRun = scheduler.Entries()[0].Schedule.Next(time.Now())
+	}
+
+	writeStartupMessage(c, nextRun, filtering, scope)
+
+	// Check if update-on-start is enabled and trigger immediate update if so.
+	updateOnStart, _ := c.PersistentFlags().GetBool("update-on-start")
+	if updateOnStart {
+		updateFunc()
+	}
 
 	// Start the scheduler to begin periodic execution.
 	scheduler.Start()
@@ -1054,8 +1103,14 @@ func runUpgradesOnSchedule(
 	// Stop the scheduler and wait for any running update to complete.
 	scheduler.Stop()
 	logrus.Debug("Waiting for running update to be finished...")
-	<-lock
+
+	if len(lock) > 0 {
+		<-lock
+	}
+
 	logrus.Debug("Scheduler stopped and update completed.")
+
+	return nil
 }
 
 // runUpdatesWithNotifications performs container updates and sends notifications about the results.
@@ -1070,14 +1125,12 @@ func runUpgradesOnSchedule(
 //
 // Returns:
 //   - *metrics.Metric: A pointer to a metric object summarizing the update session (scanned, updated, failed counts).
-func runUpdatesWithNotifications(
-	ctx context.Context,
-	filter types.Filter,
-	cleanup bool,
-) *metrics.Metric {
+var runUpdatesWithNotifications = func(ctx context.Context, filter types.Filter, cleanup bool) *metrics.Metric {
 	// Start batching notifications to group update messages, if notifier is initialized
 	if notifier != nil {
-		notifier.StartNotification()
+		if notifier != nil {
+			notifier.StartNotification()
+		}
 	} else {
 		logrus.Warn("Notifier is nil, skipping notification batching")
 	}
@@ -1097,6 +1150,10 @@ func runUpdatesWithNotifications(
 		LifecycleGID:    lifecycleGID,
 		NoSelfUpdate:    noSelfUpdate,
 		CPUCopyMode:     cpuCopyMode,
+		GitAuthToken:    gitAuthToken,
+		GitUsername:     gitUsername,
+		GitPassword:     gitPassword,
+		GitSSHKeyPath:   gitSSHKeyPath,
 	}
 
 	// Execute the update action, capturing results and image IDs for cleanup.
