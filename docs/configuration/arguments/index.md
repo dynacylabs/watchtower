@@ -30,14 +30,14 @@ This command triggers an update attempt for "nginx" and "redis" containers, disp
 
 Certain flags support referencing a file, using its contents as the value, to securely handle sensitive data like passwords or tokens, avoiding exposure in configuration files or command lines.
 
-| Flag                            | Environment Variable                             |
-|---------------------------------|-------------------------------------------------|
-| `--notification-url`            | `WATCHTOWER_NOTIFICATION_URL`                   |
+| Flag                                   | Environment Variable                            |
+|----------------------------------------|-------------------------------------------------|
+| `--http-api-token`                     | `WATCHTOWER_HTTP_API_TOKEN`                     |
 | `--notification-email-server-password` | `WATCHTOWER_NOTIFICATION_EMAIL_SERVER_PASSWORD` |
-| `--notification-slack-hook-url` | `WATCHTOWER_NOTIFICATION_SLACK_HOOK_URL`        |
-| `--notification-msteams-hook`   | `WATCHTOWER_NOTIFICATION_MSTEAMS_HOOK`          |
-| `--notification-gotify-token`   | `WATCHTOWER_NOTIFICATION_GOTIFY_TOKEN`          |
-| `--http-api-token`              | `WATCHTOWER_HTTP_API_TOKEN`                     |
+| `--notification-gotify-token`          | `WATCHTOWER_NOTIFICATION_GOTIFY_TOKEN`          |
+| `--notification-msteams-hook`          | `WATCHTOWER_NOTIFICATION_MSTEAMS_HOOK`          |
+| `--notification-slack-hook-url`        | `WATCHTOWER_NOTIFICATION_SLACK_HOOK_URL`        |
+| `--notification-url`                   | `WATCHTOWER_NOTIFICATION_URL`                   |
 
 ### Example Docker Compose Usage
 
@@ -171,7 +171,8 @@ Environment Variable: WATCHTOWER_RUN_ONCE
 
 ### Update on Start
 
-Performs an update check on startup, then continues with periodic updates.
+Performs an update check on startup.
+If a schedule is configured (via --schedule or --interval), then Watchtower continues with periodic updates.
 
 ```text
             Argument: --update-on-start
@@ -625,6 +626,60 @@ Environment Variable: WATCHTOWER_DISABLE_MEMORY_SWAPPINESS
              Default: false
 ```
 
+### CPU Copy Mode
+
+Controls how CPU settings are copied when recreating containers, addressing Podman compatibility issues with CPU limits.
+Podman handles NanoCPUs differently than Docker, which can cause container recreation failures.
+
+```text
+            Argument: --cpu-copy-mode
+Environment Variable: WATCHTOWER_CPU_COPY_MODE
+                Type: String
+     Possible Values: auto, full, none
+             Default: auto
+```
+
+!!! Note
+    - **auto**: Automatically detects if running on Podman and filters NanoCPUs for compatibility. On Docker, copies all CPU settings.
+    - **full**: Copies all CPU settings unchanged (original behavior).
+    - **none**: Strips all CPU limits to avoid compatibility issues.
+
+Use `auto` in mixed Docker/Podman environments.
+Use `full` if running only on Docker and want to preserve all CPU limits.
+Use `none` if CPU limits are causing issues and you prefer no limits on recreated containers.
+
+#### Usage Examples
+
+Run Watchtower with automatic CPU compatibility:
+
+```bash
+docker run -d \
+    --name watchtower \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    nickfedor/watchtower \
+    --cpu-copy-mode auto
+```
+
+Force full CPU copying (Docker-only environments):
+
+```bash
+docker run -d \
+    --name watchtower \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    nickfedor/watchtower \
+    --cpu-copy-mode full
+```
+
+Strip all CPU limits:
+
+```bash
+docker run -d \
+    --name watchtower \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    nickfedor/watchtower \
+    --cpu-copy-mode none
+```
+
 ## HTTP API & Metrics
 
 ### HTTP API Mode
@@ -703,11 +758,26 @@ Configures the notification service URL.
 Can reference a file for sensitive values.
 
 ```text
-            Argument: --notification-url
+             Argument: --notification-url
 Environment Variable: WATCHTOWER_NOTIFICATION_URL
-                Type: String
-             Default: None
+                 Type: String
+              Default: None
 ```
+
+### Notification Split by Container
+
+Send separate notifications for each updated container instead of grouping them.
+
+```text
+            Argument: --notification-split-by-container
+Environment Variable: WATCHTOWER_NOTIFICATION_SPLIT_BY_CONTAINER
+                Type: Boolean
+             Default: false
+```
+
+!!! Note
+    When disabled (default), notifications are grouped for all updated containers in a single session.
+    When enabled, a separate notification is sent for each container update.
 
 ### Notification Email Server Password
 

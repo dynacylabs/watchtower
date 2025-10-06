@@ -67,6 +67,11 @@ func (client MockClient) ListContainers(filter types.Filter) ([]types.Container,
 	return filtered, nil
 }
 
+// ListAllContainers returns all containers from TestData without filtering.
+func (client MockClient) ListAllContainers() ([]types.Container, error) {
+	return client.TestData.Containers, nil
+}
+
 // StopContainer simulates stopping a container by marking it in the Stopped map.
 // It records the container’s ID as stopped, increments the StopContainerCount,
 // and returns nil for simplicity.
@@ -176,4 +181,14 @@ func (client MockClient) WarnOnHeadPullFailed(_ types.Container) bool {
 func (client MockClient) WaitForContainerHealthy(_ types.ContainerID, _ time.Duration) error {
 	client.TestData.WaitForContainerHealthyCount++
 	return nil
+}
+
+// GetInfo returns mock system information for testing.
+// It provides a basic map with mock Docker/Podman info.
+func (client MockClient) GetInfo() (map[string]any, error) {
+	return map[string]any{
+		"Name":          "docker",
+		"ServerVersion": "1.50",
+		"OSType":        "linux",
+	}, nil
 }

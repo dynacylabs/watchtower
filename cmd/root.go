@@ -35,6 +35,55 @@ import (
 	"github.com/nicholas-fedor/watchtower/pkg/types"
 )
 
+var ErrContainerIDNotFound = errors.New(
+	"container ID not found in /proc/self/cgroup and HOSTNAME is not set",
+)
+
+// singleContainerReport implements types.Report for individual container notifications.
+type singleContainerReport struct {
+	updated []types.ContainerReport
+	scanned []types.ContainerReport
+	failed  []types.ContainerReport
+	skipped []types.ContainerReport
+	stale   []types.ContainerReport
+	fresh   []types.ContainerReport
+}
+
+// Scanned returns scanned containers.
+func (r *singleContainerReport) Scanned() []types.ContainerReport { return r.scanned }
+
+// Updated returns updated containers (only one for split notifications).
+func (r *singleContainerReport) Updated() []types.ContainerReport { return r.updated }
+
+// Failed returns failed containers.
+func (r *singleContainerReport) Failed() []types.ContainerReport { return r.failed }
+
+// Skipped returns skipped containers.
+func (r *singleContainerReport) Skipped() []types.ContainerReport { return r.skipped }
+
+// Stale returns stale containers.
+func (r *singleContainerReport) Stale() []types.ContainerReport { return r.stale }
+
+// Fresh returns fresh containers.
+func (r *singleContainerReport) Fresh() []types.ContainerReport { return r.fresh }
+
+// All returns all containers (prioritized by state).
+func (r *singleContainerReport) All() []types.ContainerReport {
+	all := make(
+		[]types.ContainerReport,
+		0,
+		len(r.updated)+len(r.failed)+len(r.skipped)+len(r.stale)+len(r.fresh)+len(r.scanned),
+	)
+	all = append(all, r.updated...)
+	all = append(all, r.failed...)
+	all = append(all, r.skipped...)
+	all = append(all, r.stale...)
+	all = append(all, r.fresh...)
+	all = append(all, r.scanned...)
+
+	return all
+}
+
 // client is the Docker client instance used to interact with container operations in Watchtower.
 //
 // It provides an interface for listing, stopping, starting, and managing containers, initialized during
@@ -131,6 +180,18 @@ var lifecycleUID int
 // It is set in preRun via the --lifecycle-gid flag or the WATCHTOWER_LIFECYCLE_GID environment variable,
 // providing a global default that can be overridden by container labels.
 var lifecycleGID int
+
+// notificationSplitByContainer is a boolean flag enabling separate notifications for each updated container.
+//
+// It is set in preRun via the --notification-split-by-container flag or the WATCHTOWER_NOTIFICATION_SPLIT_BY_CONTAINER environment variable,
+// allowing users to receive individual notifications instead of grouped ones.
+var notificationSplitByContainer bool
+
+// cpuCopyMode specifies how CPU settings are handled when recreating containers.
+//
+// It is set during preRun via the --cpu-copy-mode flag or the WATCHTOWER_CPU_COPY_MODE environment variable,
+// controlling CPU limit copying behavior for compatibility with different container runtimes like Podman.
+var cpuCopyMode string
 
 // rootCmd represents the root command for the Watchtower CLI, serving as the entry point for all subcommands.
 //
@@ -233,6 +294,8 @@ func preRun(cmd *cobra.Command, _ []string) {
 
 	// Get the cron schedule specification from flags or environment variables.
 	scheduleSpec, _ = flagsSet.GetString("schedule")
+	logrus.WithField("scheduleSpec", scheduleSpec).
+		Debug("Retrieved cron schedule specification from flags")
 
 	// Get secrets from files (e.g., for notifications) and read core operational flags.
 	flags.GetSecretsFromFiles(cmd)
@@ -255,6 +318,9 @@ func preRun(cmd *cobra.Command, _ []string) {
 	lifecycleUID, _ = flagsSet.GetInt("lifecycle-uid")
 	lifecycleGID, _ = flagsSet.GetInt("lifecycle-gid")
 
+	// Retrieve notification split flag.
+	notificationSplitByContainer, _ = flagsSet.GetBool("notification-split-by-container")
+
 	// Log the scope if specified, aiding debugging by confirming the operational boundary.
 	if scope != "" {
 		logrus.WithField("scope", scope).Debug("Configured operational scope")
@@ -274,6 +340,7 @@ func preRun(cmd *cobra.Command, _ []string) {
 	removeVolumes, _ := flagsSet.GetBool("remove-volumes")
 	warnOnHeadPullFailed, _ := flagsSet.GetString("warn-on-head-failure")
 	disableMemorySwappiness, _ := flagsSet.GetBool("disable-memory-swappiness")
+	cpuCopyMode, _ = flagsSet.GetString("cpu-copy-mode")
 
 	// Warn about potential redundancy in flag combinations that could result in no action.
 	if monitorOnly && noPull {
@@ -290,6 +357,7 @@ func preRun(cmd *cobra.Command, _ []string) {
 		RemoveVolumes:           removeVolumes,
 		IncludeRestarting:       includeRestarting,
 		DisableMemorySwappiness: disableMemorySwappiness,
+		CPUCopyMode:             cpuCopyMode,
 		WarnOnHeadFailed:        container.WarningStrategy(warnOnHeadPullFailed),
 	})
 
@@ -388,6 +456,32 @@ func run(c *cobra.Command, names []string) {
 	}
 }
 
+// getContainerID retrieves the actual container ID using Docker API by matching the HOSTNAME
+// environment variable with container.Config.Hostname.
+//
+// Returns:
+//   - types.ContainerID: The container ID if found.
+//   - error: Non-nil if the container ID cannot be retrieved.
+func getContainerID(client container.Client) (types.ContainerID, error) {
+	hostname := os.Getenv("HOSTNAME")
+	if hostname == "" {
+		return "", ErrContainerIDNotFound
+	}
+
+	containers, err := client.ListAllContainers()
+	if err != nil {
+		return "", fmt.Errorf("failed to list all containers: %w", err)
+	}
+
+	for _, container := range containers {
+		if container.ContainerInfo().Config.Hostname == hostname {
+			return container.ID(), nil
+		}
+	}
+
+	return "", ErrContainerIDNotFound
+}
+
 // deriveScopeFromContainer attempts to derive the operational scope from the current container's scope label.
 // This is crucial for self-update scenarios where a new Watchtower instance needs to inherit
 // the same scope as the instance being replaced to maintain proper isolation and prevent
@@ -397,25 +491,23 @@ func run(c *cobra.Command, names []string) {
 //   - client: Container client for Docker operations.
 //
 // Returns:
-//   - error: Non-nil if scope derivation fails, nil on success or if derivation is skipped.
+//   - error: Non-nil if container ID retrieval or scope derivation fails, nil on success or if derivation is skipped.
 func deriveScopeFromContainer(client container.Client) error {
 	// Skip derivation if scope is already explicitly set via flags or environment.
 	if scope != "" {
 		return nil
 	}
 
-	// Retrieve the hostname environment variable, which typically contains
-	// the container ID when running inside Docker. This allows us to identify
-	// the current Watchtower container instance.
-	hostname := os.Getenv("HOSTNAME")
-	if hostname == "" {
-		// No hostname available, cannot derive scope.
-		return nil
+	// Retrieve the actual container ID using Docker API by matching HOSTNAME.
+	containerID, err := getContainerID(client)
+	if err != nil {
+		// Container ID retrieval failed, return the error for proper handling.
+		return err
 	}
 
-	// Attempt to retrieve the container object using the hostname as the container ID.
+	// Attempt to retrieve the container object using the retrieved container ID.
 	// This lookup is necessary to access the container's labels and metadata.
-	container, err := client.GetContainer(types.ContainerID(hostname))
+	container, err := client.GetContainer(containerID)
 	if err != nil {
 		// Container lookup failed, but this is not a fatal error since
 		// scope derivation is a best-effort operation.
@@ -429,7 +521,7 @@ func deriveScopeFromContainer(client container.Client) error {
 		scope = derivedScope
 		logrus.WithFields(logrus.Fields{
 			"derived_scope": scope,
-			"container_id":  hostname,
+			"container_id":  containerID,
 		}).Debug("Derived operational scope from current container's scope label")
 	}
 
@@ -475,6 +567,10 @@ func runMain(cfg RunConfig) int {
 		)
 	}
 
+	// Initialize a lock channel to prevent concurrent updates.
+	updateLock := make(chan bool, 1)
+	updateLock <- true
+
 	// Handle one-time update mode, executing updates and registering metrics.
 	if cfg.RunOnce {
 		writeStartupMessage(cfg.Command, time.Time{}, cfg.FilterDesc, scope)
@@ -484,17 +580,6 @@ func runMain(cfg RunConfig) int {
 
 		return 0
 	}
-
-	// Handle immediate update on startup, then continue with periodic updates.
-	if cfg.UpdateOnStart {
-		writeStartupMessage(cfg.Command, time.Time{}, cfg.FilterDesc, scope)
-		metric := runUpdatesWithNotifications(cfg.Filter, cleanup)
-		metrics.Default().RegisterScan(metric)
-	}
-
-	// Initialize a lock channel to prevent concurrent updates.
-	updateLock := make(chan bool, 1)
-	updateLock <- true
 
 	// Check for and resolve conflicts with multiple Watchtower instances.
 	cleanupImageIDs := make(map[types.ImageID]bool)
@@ -741,16 +826,27 @@ func writeStartupMessage(c *cobra.Command, sched time.Time, filtering string, sc
 
 	// Configure the logger based on whether startup messages should be suppressed.
 	startupLog := setupStartupLogger(noStartupMessage)
-	startupLog.Info("Watchtower ", meta.Version, " using Docker API v", client.GetVersion())
+
+	var version string
+	if client != nil {
+		version = client.GetVersion()
+	}
+
+	startupLog.Info("Watchtower ", meta.Version, " using Docker API v", version)
 
 	// Log details about configured notifiers or lack thereof.
-	logNotifierInfo(startupLog, notifier.GetNames())
+	var notifierNames []string
+	if notifier != nil {
+		notifierNames = notifier.GetNames()
+	}
+
+	logNotifierInfo(startupLog, notifierNames)
 
 	// Log filtering information, using structured logging for scope when set
 	if scope != "" {
 		startupLog.WithField("scope", scope).Info("Only checking containers in scope")
 	} else {
-		startupLog.Info(filtering)
+		startupLog.Debug(filtering)
 	}
 
 	// Log scheduling or run mode information based on configuration.
@@ -791,7 +887,9 @@ func setupStartupLogger(noStartupMessage bool) *logrus.Entry {
 
 	log := logrus.NewEntry(logrus.StandardLogger())
 
-	notifier.StartNotification()
+	if notifier != nil {
+		notifier.StartNotification()
+	}
 
 	return log
 }
@@ -822,25 +920,78 @@ func logNotifierInfo(log *logrus.Entry, notifierNames []string) {
 //   - c: The cobra.Command instance, providing access to flags like --run-once.
 //   - sched: The time.Time of the first scheduled run, or zero if no schedule is set.
 func logScheduleInfo(log *logrus.Entry, c *cobra.Command, sched time.Time) {
-	if !sched.IsZero() {
+	switch {
+	case !sched.IsZero(): // scheduled runs
 		until := formatDuration(time.Until(sched))
-		log.Info("Scheduling first run: " + sched.Format("2006-01-02 15:04:05 -0700 MST"))
-		log.Info("Note that the first check will be performed in " + until)
+		log.Info("Scheduling next run: " + sched.Format("2006-01-02 15:04:05 -0700 MST"))
+		log.Info("Note that the next check will be performed in " + until)
 
-		return
-	}
+	case func() bool { // one-time updates
+		v, _ := c.PersistentFlags().GetBool("run-once")
 
-	if runOnce, _ := c.PersistentFlags().GetBool("run-once"); runOnce {
+		return v
+	}():
 		log.Info("Running a one time update.")
-	} else {
-		log.Info("Periodic runs are not enabled.")
+
+	case func() bool { // update on start
+		v, _ := c.PersistentFlags().GetBool("update-on-start")
+
+		return v
+	}():
+		log.Info("Running update on start, then scheduling periodic updates.")
+
+	case func() bool { // HTTP API without periodic polling
+		a, _ := c.PersistentFlags().GetBool("http-api-update")
+		b, _ := c.PersistentFlags().GetBool("http-api-periodic-polls")
+
+		return a && !b
+	}():
+		log.Info("Updates via HTTP API enabled. Periodic updates are not enabled.")
+
+	case func() bool { // HTTP API with periodic polling
+		a, _ := c.PersistentFlags().GetBool("http-api-update")
+		b, _ := c.PersistentFlags().GetBool("http-api-periodic-polls")
+
+		return a && b
+	}():
+		log.Info("Updates via HTTP API enabled. Periodic updates are also enabled.")
+
+	default: // default periodic
+		log.Info("Periodic updates are enabled with default schedule.")
 	}
+}
+
+// waitForRunningUpdate waits for any currently running update to complete before proceeding with shutdown.
+// It checks the lock channel status and blocks with a timeout if an update is in progress.
+// Parameters:
+//   - ctx: The context for cancellation, allowing early shutdown on context timeout.
+//   - lock: The channel used to synchronize updates, ensuring only one runs at a time.
+func waitForRunningUpdate(ctx context.Context, lock chan bool) {
+	const updateWaitTimeout = 30 * time.Second
+
+	logrus.Debug("Checking lock status before shutdown.")
+
+	if len(lock) == 0 {
+		select {
+		case <-lock:
+			logrus.Debug("Lock acquired, update finished.")
+		case <-time.After(updateWaitTimeout):
+			logrus.Warn("Timeout waiting for running update to finish, proceeding with shutdown.")
+		case <-ctx.Done():
+			logrus.Debug("Context cancelled, proceeding with shutdown.")
+		}
+	} else {
+		logrus.Debug("No update running, lock available.")
+	}
+
+	logrus.Debug("Lock check completed.")
 }
 
 // runUpgradesOnSchedule schedules and executes periodic container updates according to the cron specification.
 //
 // It sets up a cron scheduler, runs updates at specified intervals, and ensures graceful shutdown on interrupt
 // signals (SIGINT, SIGTERM) or context cancellation, handling concurrency with a lock channel.
+// If update-on-start is enabled, it triggers the first update immediately before starting the scheduler.
 //
 // Parameters:
 //   - ctx: The context controlling the scheduler’s lifecycle, enabling shutdown on cancellation.
@@ -869,29 +1020,48 @@ func runUpgradesOnSchedule(
 	// Create a new cron scheduler for managing periodic updates.
 	scheduler := cron.New()
 
+	// Define the update function to be used both for scheduled runs and immediate execution.
+	updateFunc := func() {
+		select {
+		case v := <-lock:
+			defer func() { lock <- v }()
+
+			metric := runUpdatesWithNotifications(filter, cleanup)
+			metrics.Default().RegisterScan(metric)
+		default:
+			metrics.Default().RegisterScan(nil)
+			logrus.Debug("Skipped another update already running.")
+		}
+
+		nextRuns := scheduler.Entries()
+		if len(nextRuns) > 0 {
+			logrus.Debug("Scheduled next run: " + nextRuns[0].Next.String())
+		}
+	}
+
 	// Add the update function to the cron schedule, handling concurrency and metrics.
-	if err := scheduler.AddFunc(
-		scheduleSpec,
-		func() {
-			select {
-			case v := <-lock:
-				defer func() { lock <- v }()
-				metric := runUpdatesWithNotifications(filter, cleanup)
-				metrics.Default().RegisterScan(metric)
-			default:
-				metrics.Default().RegisterScan(nil)
-				logrus.Debug("Skipped another update already running.")
-			}
-			nextRuns := scheduler.Entries()
-			if len(nextRuns) > 0 {
-				logrus.Debug("Scheduled next run: " + nextRuns[0].Next.String())
-			}
-		}); err != nil {
-		return fmt.Errorf("failed to schedule updates: %w", err)
+	if scheduleSpec != "" {
+		if err := scheduler.AddFunc(
+			scheduleSpec,
+			updateFunc); err != nil {
+			return fmt.Errorf("failed to schedule updates: %w", err)
+		}
 	}
 
 	// Log startup message with the first scheduled run time.
-	writeStartupMessage(c, scheduler.Entries()[0].Schedule.Next(time.Now()), filtering, scope)
+	var nextRun time.Time
+	if len(scheduler.Entries()) > 0 {
+		nextRun = scheduler.Entries()[0].Schedule.Next(time.Now())
+	}
+
+	writeStartupMessage(c, nextRun, filtering, scope)
+
+	// Check if update-on-start is enabled and trigger immediate update if so.
+	updateOnStart, _ := c.PersistentFlags().GetBool("update-on-start")
+	if updateOnStart {
+		logrus.Info("Update on startup enabled - performing immediate check")
+		updateFunc()
+	}
 
 	// Start the scheduler to begin periodic execution.
 	scheduler.Start()
@@ -911,7 +1081,9 @@ func runUpgradesOnSchedule(
 	// Stop the scheduler and wait for any running update to complete.
 	scheduler.Stop()
 	logrus.Debug("Waiting for running update to be finished...")
-	<-lock
+
+	waitForRunningUpdate(ctx, lock)
+
 	logrus.Debug("Scheduler stopped and update completed.")
 
 	return nil
@@ -928,10 +1100,12 @@ func runUpgradesOnSchedule(
 //
 // Returns:
 //   - *metrics.Metric: A pointer to a metric object summarizing the update session (scanned, updated, failed counts).
-func runUpdatesWithNotifications(filter types.Filter, cleanup bool) *metrics.Metric {
+var runUpdatesWithNotifications = func(filter types.Filter, cleanup bool) *metrics.Metric {
 	// Start batching notifications to group update messages, if notifier is initialized
 	if notifier != nil {
-		notifier.StartNotification()
+		if notifier != nil {
+			notifier.StartNotification()
+		}
 	} else {
 		logrus.Warn("Notifier is nil, skipping notification batching")
 	}
@@ -949,6 +1123,7 @@ func runUpdatesWithNotifications(filter types.Filter, cleanup bool) *metrics.Met
 		NoPull:          noPull,
 		LifecycleUID:    lifecycleUID,
 		LifecycleGID:    lifecycleGID,
+		CPUCopyMode:     cpuCopyMode,
 	}
 
 	// Execute the update action, capturing results and image IDs for cleanup.
@@ -983,7 +1158,24 @@ func runUpdatesWithNotifications(filter types.Filter, cleanup bool) *metrics.Met
 
 	// Send the batched notification with update results, if notifier and result are initialized
 	if notifier != nil && result != nil {
-		notifier.SendNotification(result)
+		if notificationSplitByContainer && len(result.Updated()) > 0 {
+			// Send separate notifications for each updated container
+			for _, updatedContainer := range result.Updated() {
+				// Create a minimal report with only this container
+				singleContainerReport := &singleContainerReport{
+					updated: []types.ContainerReport{updatedContainer},
+					scanned: result.Scanned(), // Include all scanned for context
+					failed:  result.Failed(),  // Include all failed for context
+					skipped: result.Skipped(), // Include all skipped for context
+					stale:   result.Stale(),   // Include all stale for context
+					fresh:   result.Fresh(),   // Include all fresh for context
+				}
+				notifier.SendNotification(singleContainerReport)
+			}
+		} else {
+			// Send grouped notification as before
+			notifier.SendNotification(result)
+		}
 	}
 
 	// Generate and log a metric summarizing the update session.

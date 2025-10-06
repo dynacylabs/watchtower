@@ -33,6 +33,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@ff7abcd0c3c05ccf6adc123a8cd1fd4fb30fb493
         with:
+          ref: 'main'
           fetch-depth: 0
 
       - name: Import GPG key
@@ -44,10 +45,10 @@ jobs:
           git_commit_gpgsign: true
 
       - name: Generate Changelog
-        uses: orhun/git-cliff-action@98c93442bb05a455a77bee982867857ae748eeea # v4
+        uses: orhun/git-cliff-action@d77b37db2e3f7398432d34b72a12aa3e2ba87e51 # v4
         with:
           config: cliff.toml
-          args: --verbose --latest --strip header
+          args: --verbose
         env:
           OUTPUT: CHANGELOG.md
           GITHUB_REPO: ${{ github.repository }}
@@ -55,7 +56,7 @@ jobs:
 
       - name: Create Pull Request for Changelog
         if: ${{ !fromJson(inputs.dry-run || 'false') }}
-        uses: peter-evans/create-pull-request@9ec683ee07f9121fdf529b923931dd78d977a5c9
+        uses: peter-evans/create-pull-request@d3e081a03ae8d69301ed924bae10d70ea4af94d9
         with:
           token: ${{ secrets.CHANGELOG_PAT }}
           committer: Nick Fedor <nick@nickfedor.com>
@@ -64,7 +65,6 @@ jobs:
           body: "Automated changelog update for release ${{ github.ref_name }}"
           branch: docs/update-changelog-${{ github.ref_name }}
           delete-branch: true
-          sign-commits: true
 
   # Build binaries, images, SBOMs, and attestations
   build:

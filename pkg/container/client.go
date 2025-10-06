@@ -91,11 +91,21 @@ type Client interface {
 	// GetVersion returns the client's API version.
 	GetVersion() string
 
+	// GetInfo returns system information from the Docker daemon.
+	//
+	// Returns system-wide information about the Docker installation.
+	GetInfo() (map[string]any, error)
+
 	// WaitForContainerHealthy waits for a container to become healthy or times out.
 	//
 	// It polls the container's health status until it reports "healthy" or the timeout is reached.
 	// If the container has no health check configured, it returns immediately.
 	WaitForContainerHealthy(containerID types.ContainerID, timeout time.Duration) error
+
+	// ListAllContainers retrieves a list of all containers from the Docker host, regardless of status.
+	//
+	// Returns all containers without filtering by status or other criteria.
+	ListAllContainers() ([]types.Container, error)
 }
 
 // client is the concrete implementation of the Client interface.
@@ -115,6 +125,7 @@ type ClientOptions struct {
 	ReviveStopped           bool
 	IncludeRestarting       bool
 	DisableMemorySwappiness bool
+	CPUCopyMode             string
 	WarnOnHeadFailed        WarningStrategy
 }
 
@@ -281,6 +292,40 @@ func (c client) StartContainer(container types.Container) (types.ContainerID, er
 	// Get unified network config.
 	networkConfig := getNetworkConfig(container, clientVersion)
 
+	// Detect if running on Podman for CPU compatibility.
+	// Podman and Docker handle CPU resource allocation differently when copying container configurations.
+	// Podman requires special handling for CPU settings to ensure proper resource limits are applied,
+	// whereas Docker can use standard copying mechanisms. This detection ensures Watchtower applies
+	// the correct CPU copying strategy based on the container runtime being used.
+	isPodman := false
+
+	if c.CPUCopyMode == "auto" {
+		// When CPUCopyMode is set to "auto", automatically detect the container runtime (Podman vs Docker)
+		// to determine the appropriate CPU copying behavior. This prevents resource allocation issues
+		// that could occur if Docker-specific logic is applied to Podman or vice versa.
+		info, err := c.GetInfo()
+		if err != nil {
+			// If system info retrieval fails, fall back to assuming Docker behavior.
+			// This conservative approach ensures compatibility in environments where runtime detection
+			// is not possible, defaulting to the more common Docker runtime assumptions.
+			logrus.WithError(err).
+				Debug("Failed to get system info for Podman detection, assuming Docker")
+		} else {
+			// Detection works by examining the system info returned by the Docker API client.
+			// Podman identifies itself in two ways:
+			// 1. The "Name" field equals "podman"
+			// 2. The "ServerVersion" field contains "podman" (case-insensitive)
+			// This dual-check ensures reliable detection across different Podman versions and configurations.
+			if name, exists := info["Name"]; exists && name == "podman" {
+				isPodman = true
+			} else if serverVersion, exists := info["ServerVersion"]; exists {
+				if sv, ok := serverVersion.(string); ok && strings.Contains(strings.ToLower(sv), "podman") {
+					isPodman = true
+				}
+			}
+		}
+	}
+
 	// Start new container with selected config.
 	newID, err := StartTargetContainer(
 		c.api,
@@ -290,6 +335,8 @@ func (c client) StartContainer(container types.Container) (types.ContainerID, er
 		clientVersion,
 		flags.DockerAPIMinVersion, // Docker API Version 1.24
 		c.DisableMemorySwappiness,
+		c.CPUCopyMode,
+		isPodman,
 	)
 	if err != nil {
 		logrus.WithFields(fields).WithError(err).Debug("Failed to start new container")
@@ -300,6 +347,53 @@ func (c client) StartContainer(container types.Container) (types.ContainerID, er
 	logrus.WithFields(fields).WithField("new_id", newID).Debug("Started new container")
 
 	return newID, nil
+}
+
+// ListAllContainers retrieves a list of all containers from the Docker host, regardless of status.
+//
+// Returns:
+//   - []types.Container: List of all containers.
+//   - error: Non-nil if listing fails, nil on success.
+func (c client) ListAllContainers() ([]types.Container, error) {
+	ctx := context.Background()
+	clog := logrus.WithField("list_all", true)
+
+	clog.Debug("Retrieving all container list")
+
+	// Fetch containers with no status filter
+	containers, err := c.api.ContainerList(ctx, dockerContainer.ListOptions{})
+	if err != nil {
+		if strings.Contains(err.Error(), "page not found") {
+			clog.WithFields(logrus.Fields{
+				"error":       err,
+				"endpoint":    "/containers/json",
+				"api_version": strings.Trim(c.api.ClientVersion(), "\""),
+				"docker_host": os.Getenv("DOCKER_HOST"),
+			}).Warn("Docker API returned 404 for container list; treating as empty list")
+
+			return []types.Container{}, nil
+		}
+
+		clog.WithError(err).Debug("Failed to list all containers")
+
+		return nil, fmt.Errorf("%w: %w", errListContainersFailed, err)
+	}
+
+	// Convert to types.Container
+	hostContainers := []types.Container{}
+
+	for _, runningContainer := range containers {
+		container, err := GetSourceContainer(c.api, types.ContainerID(runningContainer.ID))
+		if err != nil {
+			return nil, err
+		}
+
+		hostContainers = append(hostContainers, container)
+	}
+
+	clog.WithField("count", len(hostContainers)).Debug("Listed all containers")
+
+	return hostContainers, nil
 }
 
 // RenameContainer renames an existing container to a new name.
@@ -685,6 +779,33 @@ func (c client) RemoveImageByID(imageID types.ImageID) error {
 //   - string: Docker API version (e.g., "1.44").
 func (c client) GetVersion() string {
 	return strings.Trim(c.api.ClientVersion(), "\"")
+}
+
+// GetInfo returns system information from the Docker daemon.
+//
+// Returns:
+//   - map[string]interface{}: System information.
+//   - error: Non-nil if retrieval fails, nil on success.
+func (c client) GetInfo() (map[string]any, error) {
+	ctx := context.Background()
+
+	info, err := c.api.Info(ctx)
+	if err != nil {
+		logrus.WithError(err).Debug("Failed to get system info")
+
+		return nil, fmt.Errorf("failed to get system info: %w", err)
+	}
+
+	// Convert to map for easier access
+	infoMap := map[string]any{
+		"Name":            info.Name,
+		"ServerVersion":   info.ServerVersion,
+		"OSType":          info.OSType,
+		"OperatingSystem": info.OperatingSystem,
+		"Driver":          info.Driver,
+	}
+
+	return infoMap, nil
 }
 
 // WaitForContainerHealthy waits for a container to become healthy or times out.
