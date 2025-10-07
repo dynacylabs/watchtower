@@ -23,8 +23,7 @@ RUN apk add --no-cache \
 COPY . /watchtower
 
 RUN cd /watchtower && \
-        VERSION=${WATCHTOWER_VERSION} && \
-    GO111MODULE=on CGO_ENABLED=0 go build -a -ldflags "-extldflags '-static' -X github.com/nicholas-fedor/watchtower/internal/meta.Version=${VERSION} -X github.com/nicholas-fedor/watchtower/pkg/registry/digest.UserAgent=Watchtower/${VERSION}" .
+    GO111MODULE=on CGO_ENABLED=0 go build -a -ldflags "-extldflags '-static' -X github.com/nicholas-fedor/watchtower/internal/meta.Version=$(git describe --tags) -X github.com/nicholas-fedor/watchtower/pkg/registry/digest.UserAgent=Watchtower/v$(git describe --tags)" .
 
 
 #
