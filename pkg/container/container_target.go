@@ -55,6 +55,9 @@ func StartTargetContainer(
 	config := sourceContainer.GetCreateConfig()
 	hostConfig := sourceContainer.GetCreateHostConfig()
 
+	// Log the image being used for container creation
+	clog.WithField("config_image", config.Image).Debug("Container will be created with this image")
+
 	// Set MemorySwappiness to nil for Podman compatibility if flag is enabled.
 	if disableMemorySwappiness {
 		hostConfig.MemorySwappiness = nil

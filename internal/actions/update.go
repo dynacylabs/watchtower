@@ -859,16 +859,26 @@ func restartGitContainer(
 		"commit":      latestCommit,
 	}).Debug("Successfully built new image from Git")
 
-	// Update container to use the newly built image
-	// Note: In a real implementation, this would require modifying the container's
-	// configuration to point to the new image. For now, we'll assume the container
-	// will be recreated with the updated image through docker-compose or similar.
+	// Update the container's configuration to use the newly built image
+	// We need to modify both the Config.Image and ContainerJSONBase.Image fields
+	// to ensure the new container is created with the correct image reference
+	oldImageName := container.ContainerInfo().Config.Image
+	oldImageID := container.ContainerInfo().Image
 
-	// For this implementation, we'll use the existing StartContainer method
-	// but in practice, the container's image reference would need to be updated
+	container.ContainerInfo().Config.Image = imageName
+	container.ContainerInfo().Image = string(builtImageID)
+
+	logrus.WithFields(fields).WithFields(logrus.Fields{
+		"old_image_name": oldImageName,
+		"old_image_id":   oldImageID,
+		"new_image_name": imageName,
+		"new_image_id":   builtImageID,
+	}).Info("Updated container config to use newly built image")
+
+	// Start the new container with the updated image configuration
 	newContainerID, err := client.StartContainer(container)
 	if err != nil {
-		logrus.WithFields(fields).WithError(err).Debug("Failed to start container with new image")
+		logrus.WithFields(fields).WithError(err).Error("Failed to start container with new image")
 
 		return "", false, fmt.Errorf("%w: %w", errStartContainerFailed, err)
 	}
