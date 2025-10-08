@@ -896,6 +896,16 @@ func restartGitContainer(
 	container.ContainerInfo().Config.Image = imageName
 	container.ContainerInfo().Image = string(builtImageID)
 
+	// Update container labels with the new commit hash
+	// This is critical to prevent infinite update loops - the new container
+	// needs to know what commit it was built from
+	if container.ContainerInfo().Config.Labels == nil {
+		container.ContainerInfo().Config.Labels = make(map[string]string)
+	}
+	container.ContainerInfo().Config.Labels["com.centurylinklabs.watchtower.git-commit"] = latestCommit
+	container.ContainerInfo().Config.Labels["com.centurylinklabs.watchtower.git-repo"] = repoURL
+	container.ContainerInfo().Config.Labels["com.centurylinklabs.watchtower.git-branch"] = branch
+
 	logrus.WithFields(fields).WithFields(logrus.Fields{
 		"old_image_name": oldImageName,
 		"old_image_id":   oldImageID,
