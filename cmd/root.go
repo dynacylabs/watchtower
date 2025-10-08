@@ -1180,6 +1180,14 @@ var runUpdatesWithNotifications = func(ctx context.Context, filter types.Filter,
 		GitSSHKeyPath:   gitSSHKeyPath,
 	}
 
+	// Log Git authentication configuration for debugging
+	logrus.WithFields(logrus.Fields{
+		"has_git_token":    gitAuthToken != "",
+		"has_git_username": gitUsername != "",
+		"has_git_password": gitPassword != "",
+		"has_git_ssh_key":  gitSSHKeyPath != "",
+	}).Info("Git authentication parameters")
+
 	// Execute the update action, capturing results and image IDs for cleanup.
 	result, cleanupImageIDs, err := actions.Update(ctx, client, updateParams)
 	if err != nil {

@@ -178,7 +178,12 @@ func ParseAuthConfigFromFlags(
 ) (types.AuthConfig, error) {
 	config := types.AuthConfig{}
 
-	logrus.Debug("Parsing authentication configuration from flags")
+	logrus.WithFields(logrus.Fields{
+		"has_token":    token != "",
+		"has_username": username != "",
+		"has_password": password != "",
+		"has_ssh_key":  sshKeyPath != "",
+	}).Info("Parsing authentication configuration from flags")
 
 	// Determine auth method based on provided credentials
 	// Priority order: token > basic auth > SSH key > none
