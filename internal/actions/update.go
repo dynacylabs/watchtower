@@ -1012,6 +1012,25 @@ func checkGitStaleness(
 	// Create authentication config from environment/flags
 	authConfig := CreateGitAuthConfig(params)
 
+	// Log authentication method being used
+	authMethodName := "none"
+	hasToken := false
+	switch authConfig.Method {
+	case types.AuthMethodToken:
+		authMethodName = "token"
+		hasToken = authConfig.Token != ""
+	case types.AuthMethodBasic:
+		authMethodName = "basic"
+	case types.AuthMethodSSH:
+		authMethodName = "ssh"
+	}
+	logrus.WithFields(logrus.Fields{
+		"container":   container.Name(),
+		"repo":        repoURL,
+		"auth_method": authMethodName,
+		"has_token":   hasToken,
+	}).Info("Checking Git repository with authentication")
+
 	// Get latest commit from remote repository
 	latestCommit, err := gitClient.GetLatestCommit(ctx, repoURL, branch, authConfig)
 	if err != nil {
