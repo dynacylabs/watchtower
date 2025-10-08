@@ -88,6 +88,16 @@ func createTokenAuth(token string) transport.AuthMethod {
 		return nil
 	}
 
+	// Log token info for debugging (mask most of it)
+	tokenPrefix := "invalid"
+	if len(token) >= 4 {
+		tokenPrefix = token[:4]
+	}
+	logrus.WithFields(logrus.Fields{
+		"token_prefix": tokenPrefix,
+		"token_length": len(token),
+	}).Debug("Creating token authentication")
+
 	return &http.BasicAuth{
 		Username: "token", // GitHub/GitLab convention
 		Password: token,

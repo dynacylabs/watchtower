@@ -211,13 +211,45 @@ func (c *DefaultClient) getLatestCommitGoGit(
 		logrus.WithFields(logrus.Fields{
 			"repo": repoURL,
 			"ref":  ref,
-		}).WithError(err).Debug("Failed to list remote references")
+		}).WithError(err).Debug("Failed to list remote references with authentication")
 
-		return "", types.Error{
-			Op:     "list",
-			URL:    repoURL,
-			Reason: "failed to list remote references",
-			Cause:  err,
+		// If authentication was provided but failed, try without authentication
+		// This handles cases where:
+		// 1. The repository is public but an invalid token was provided
+		// 2. The token doesn't have the required permissions
+		if auth.Method != types.AuthMethodNone {
+			logrus.WithFields(logrus.Fields{
+				"repo": repoURL,
+				"ref":  ref,
+			}).Info("Retrying without authentication for potentially public repository")
+
+			refs, err = remote.ListContext(ctx, &git.ListOptions{
+				Auth: nil,
+			})
+			if err != nil {
+				logrus.WithFields(logrus.Fields{
+					"repo": repoURL,
+					"ref":  ref,
+				}).WithError(err).Debug("Failed to list remote references without authentication")
+
+				return "", types.Error{
+					Op:     "list",
+					URL:    repoURL,
+					Reason: "failed to list remote references",
+					Cause:  err,
+				}
+			}
+			logrus.WithFields(logrus.Fields{
+				"repo": repoURL,
+				"ref":  ref,
+			}).Info("Successfully accessed public repository without authentication")
+		} else {
+			return "", types.Error{
+				Op:     "list",
+				URL:    repoURL,
+				Reason: "failed to list remote references",
+				Cause:  err,
+			}
 		}
 	}
 
