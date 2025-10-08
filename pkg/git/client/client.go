@@ -221,7 +221,7 @@ func (c *DefaultClient) getLatestCommitGoGit(
 			logrus.WithFields(logrus.Fields{
 				"repo": repoURL,
 				"ref":  ref,
-			}).Info("Retrying without authentication for potentially public repository")
+			}).Debug("Retrying without authentication for potentially public repository")
 
 			refs, err = remote.ListContext(ctx, &git.ListOptions{
 				Auth: nil,
@@ -242,7 +242,7 @@ func (c *DefaultClient) getLatestCommitGoGit(
 			logrus.WithFields(logrus.Fields{
 				"repo": repoURL,
 				"ref":  ref,
-			}).Info("Successfully accessed public repository without authentication")
+			}).Debug("Successfully accessed public repository without authentication")
 		} else {
 			return "", types.Error{
 				Op:     "list",

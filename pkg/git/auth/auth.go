@@ -193,7 +193,7 @@ func ParseAuthConfigFromFlags(
 		"has_username": username != "",
 		"has_password": password != "",
 		"has_ssh_key":  sshKeyPath != "",
-	}).Info("Parsing authentication configuration from flags")
+	}).Debug("Parsing authentication configuration from flags")
 
 	// Determine auth method based on provided credentials
 	// Priority order: token > basic auth > SSH key > none

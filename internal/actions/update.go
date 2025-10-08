@@ -1058,7 +1058,7 @@ func checkGitStaleness(
 		"repo":        repoURL,
 		"auth_method": authMethodName,
 		"has_token":   hasToken,
-	}).Info("Checking Git repository with authentication")
+	}).Debug("Checking Git repository with authentication")
 
 	// Get latest commit from remote repository
 	latestCommit, err := gitClient.GetLatestCommit(ctx, repoURL, branch, authConfig)
