@@ -480,8 +480,15 @@ func performRollingRestart(
 			} else {
 				// Wait for the container to become healthy if it has a health check
 				if waitErr := client.WaitForContainerHealthy(newContainerID, defaultHealthCheckTimeout); waitErr != nil {
-					logrus.WithFields(fields).WithError(waitErr).Warn("Failed to wait for container to become healthy")
-					// Don't fail the update, just log the warning
+					logrus.WithFields(fields).WithError(waitErr).Error("Container failed health check after update")
+					// Mark as failed so it shows in the failure count
+					failed[c.ID()] = fmt.Errorf("container health check failed: %w", waitErr)
+					
+					// Don't mark as successfully updated if health check failed
+					if renamed {
+						renamedContainers[c.ID()] = true
+					}
+					continue
 				}
 
 				if c.IsStale() && !renamed {
@@ -798,7 +805,7 @@ func restartGitContainer(
 	logrus.WithFields(fields).Debug("Restarting Git-monitored container")
 
 	// Extract Git information
-	repoURL, branch, _ := gitInfoFromContainer(container)
+	repoURL, branch, currentCommit := gitInfoFromContainer(container)
 	if repoURL == "" {
 		return "", false, errNoGitRepoURL
 	}
@@ -816,6 +823,14 @@ func restartGitContainer(
 	if err != nil {
 		return "", false, fmt.Errorf("failed to get latest commit: %w", err)
 	}
+
+	// Log commit information for the update
+	logrus.WithFields(fields).WithFields(logrus.Fields{
+		"repo":       repoURL,
+		"branch":     branch,
+		"old_commit": currentCommit,
+		"new_commit": latestCommit,
+	}).Info("Updating Git container")
 
 	// Parse the image reference to get the base name without tag
 	ref, err := reference.ParseNormalizedNamed(container.ImageName())
@@ -1003,14 +1018,20 @@ func checkGitStaleness(
 	}
 
 	stale := currentCommit != latestCommit
+	
+	// Always log commit comparison at Info level, whether stale or not
+	commitFields := logrus.Fields{
+		"container":    container.Name(),
+		"repo":         repoURL,
+		"branch":       branch,
+		"old_commit":   currentCommit,
+		"new_commit":   latestCommit,
+	}
+	
 	if stale {
-		logrus.WithFields(logrus.Fields{
-			"container":      container.Name(),
-			"repo":           repoURL,
-			"branch":         branch,
-			"current_commit": currentCommit,
-			"latest_commit":  latestCommit,
-		}).Debug("Git repository has new commits")
+		logrus.WithFields(commitFields).Info("Git container has new commits available")
+	} else {
+		logrus.WithFields(commitFields).Info("Git container is up to date")
 	}
 
 	return stale, nil
