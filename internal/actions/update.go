@@ -161,6 +161,14 @@ func Update(
 		)
 
 		if isGitMonitored {
+			// Log that we're checking a Git-monitored container
+			repoURL, branch, currentCommit := gitInfoFromContainer(sourceContainer)
+			clog.WithFields(logrus.Fields{
+				"repo":         repoURL,
+				"branch":       branch,
+				"current_commit": currentCommit,
+			}).Info("Checking Git-monitored container")
+			
 			// Perform Git staleness checking
 			stale, err = checkGitStaleness(ctx, sourceContainer, params)
 			if err == nil && stale {
@@ -192,7 +200,12 @@ func Update(
 		// Handle staleness check results, logging skips or adding to the progress report.
 		if err != nil {
 			// Skip containers with staleness check errors, marking them as skipped.
-			clog.WithError(err).Debug("Cannot update container, skipping")
+			if isGitMonitored {
+				// For Git containers, log the error at Info level so it's visible
+				clog.WithError(err).Info("Cannot check Git container, skipping")
+			} else {
+				clog.WithError(err).Debug("Cannot update container, skipping")
+			}
 
 			stale = false
 			staleCheckFailed++
