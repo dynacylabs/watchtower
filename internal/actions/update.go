@@ -887,6 +887,25 @@ func restartGitContainer(
 		"commit":      latestCommit,
 	}).Debug("Successfully built new image from Git")
 
+	// Rename Watchtower containers before updating (special handling for self-updates)
+	renamed := false
+	if container.IsWatchtower() && !params.NoRestart {
+		newName := util.RandName()
+		if err := client.RenameContainer(container, newName); err != nil {
+			logrus.WithError(err).WithFields(logrus.Fields{
+				"container": container.Name(),
+				"new_name":  newName,
+			}).Error("Failed to rename Watchtower container")
+			
+			return "", false, fmt.Errorf("%w: %w", errRenameWatchtowerFailed, err)
+		}
+		
+		renamed = true
+		logrus.WithFields(fields).
+			WithField("new_name", newName).
+			Info("Renamed Watchtower container for self-update")
+	}
+
 	// Update the container's configuration to use the newly built image
 	// We need to modify both the Config.Image and ContainerJSONBase.Image fields
 	// to ensure the new container is created with the correct image reference
@@ -936,7 +955,7 @@ func restartGitContainer(
 		WithField("new_container_id", newContainerID).
 		Info("Successfully restarted Git-monitored container")
 
-	return newContainerID, false, nil
+	return newContainerID, renamed, nil
 }
 
 // UpdateImplicitRestart marks containers linked to restarting ones.
