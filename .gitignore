@@ -201,3 +201,4 @@ test-reports/
 .all-contributors/
 /Logs
 TODO.md
+*.env
