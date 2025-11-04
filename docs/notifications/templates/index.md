@@ -37,11 +37,11 @@ Simple templates are used when `--notification-report` is not set, formatting in
 {{- if $i}}{{- println -}}{{- end -}}
 {{- $msg := $e.Message -}}
 {{- if eq $msg "Found new image" -}}
-    Found new image: {{$e.Data.image}} ({{with $e.Data.new_id}}{{.}}{{else}}unknown{{end}})
+    Found new image: {{$e.Data.image}} ({{with $e.Data.new_image_id}}{{.}}{{else}}unknown{{end}})
 {{- else if eq $msg "Stopping container" -}}
     Stopped stale container: {{$e.Data.container}} ({{with $e.Data.id}}{{.}}{{else}}unknown{{end}})
 {{- else if eq $msg "Started new container" -}}
-    Started new container: {{$e.Data.container}} ({{with $e.Data.new_id}}{{.}}{{else}}unknown{{end}})
+    Started new container: {{$e.Data.container}} ({{with $e.Data.new_container_id}}{{.}}{{else}}unknown{{end}})
 {{- else if eq $msg "Removing image" -}}
     Removed stale image: {{with $e.Data.image_id}}{{.}}{{else}}unknown{{end}}
 {{- else if $e.Data -}}
@@ -67,11 +67,11 @@ The [Template Preview Tool](../template-preview/index.md) uses a `notifications.
 {{- if $i}}{{- println -}}{{- end -}}
 {{- $msg := $e.Message -}}
 {{- if eq $msg "Found new image" -}}
-    Found new image: {{$e.Data.image}} ({{with $e.Data.new_id}}{{.}}{{else}}unknown{{end}})
+    Found new image: {{$e.Data.image}} ({{with $e.Data.new_image_id}}{{.}}{{else}}unknown{{end}})
 {{- else if eq $msg "Stopping container" -}}
     Stopped stale container: {{$e.Data.container}} ({{with $e.Data.id}}{{.}}{{else}}unknown{{end}})
 {{- else if eq $msg "Started new container" -}}
-    Started new container: {{$e.Data.container}} ({{with $e.Data.new_id}}{{.}}{{else}}unknown{{end}})
+    Started new container: {{$e.Data.container}} ({{with $e.Data.new_container_id}}{{.}}{{else}}unknown{{end}})
 {{- else if eq $msg "Removing image" -}}
     Removed stale image: {{with $e.Data.image_id}}{{.}}{{else}}unknown{{end}}
 {{- else if $e.Data -}}
