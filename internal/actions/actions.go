@@ -434,6 +434,7 @@ func sendSplitNotifications(
 	// whether a notification has been sent for this container.
 	// This map is scoped to the function to ensure tracking is per-notification-session.
 	notified := make(map[string]bool)
+	timestamp := time.Now()
 
 	if notificationReport {
 		// Send individual report notifications for each updated container
@@ -526,10 +527,10 @@ func sendSplitNotifications(
 			singleContainerReport := buildSingleContainerReport(updatedContainer, result)
 
 			// Create log entries for container update events
-			entries := buildUpdateEntries(updatedContainer, time.Now())
+			entries := buildUpdateEntries(updatedContainer, timestamp)
 
 			// Add cleanup entries for this container
-			containerCleanupEntries := buildCleanupEntriesForContainer(cleanedImages, updatedContainer.Name())
+			containerCleanupEntries := buildCleanupEntriesForContainer(cleanedImages, updatedContainer.Name(), timestamp)
 			entries = append(entries, containerCleanupEntries...)
 
 			notifier.SendFilteredEntries(entries, singleContainerReport)
@@ -568,10 +569,10 @@ func sendSplitNotifications(
 				singleContainerReport := buildSingleContainerReport(staleContainer, result)
 
 				// Create log entries for container update events (monitor-only containers don't get updated, but we still send the same format)
-				entries := buildUpdateEntries(staleContainer, time.Now())
+				entries := buildUpdateEntries(staleContainer, timestamp)
 
 				// Add cleanup entries for this container
-				containerCleanupEntries := buildCleanupEntriesForContainer(cleanedImages, staleContainer.Name())
+				containerCleanupEntries := buildCleanupEntriesForContainer(cleanedImages, staleContainer.Name(), timestamp)
 				entries = append(entries, containerCleanupEntries...)
 
 				notifier.SendFilteredEntries(entries, singleContainerReport)
@@ -617,15 +618,16 @@ func buildSingleContainerReport(
 // Parameters:
 //   - cleanedImages: Slice of CleanedImageInfo containing details of cleaned images.
 //   - containerName: Name of the container to filter cleanup entries for.
+//   - timestamp: The timestamp to use for all log entries.
 //
 // Returns:
 //   - []*logrus.Entry: A slice of log entries for the cleaned images associated with the container.
 func buildCleanupEntriesForContainer(
 	cleanedImages []types.CleanedImageInfo,
 	containerName string,
+	timestamp time.Time,
 ) []*logrus.Entry {
 	entries := make([]*logrus.Entry, 0)
-	now := time.Now()
 
 	for _, cleanedImage := range cleanedImages {
 		if cleanedImage.ContainerName == containerName {
@@ -637,7 +639,7 @@ func buildCleanupEntriesForContainer(
 					"image_name":     cleanedImage.ImageName,
 					"image_id":       cleanedImage.ImageID.ShortID(),
 				},
-				Time: now,
+				Time: timestamp,
 			}
 			entries = append(entries, entry)
 		}
