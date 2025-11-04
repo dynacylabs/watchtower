@@ -11,26 +11,26 @@ import (
 	"github.com/onsi/gomega"
 
 	"github.com/nicholas-fedor/watchtower/internal/actions"
-	"github.com/nicholas-fedor/watchtower/internal/actions/mocks"
+	mockActions "github.com/nicholas-fedor/watchtower/internal/actions/mocks"
 	"github.com/nicholas-fedor/watchtower/pkg/filters"
 	"github.com/nicholas-fedor/watchtower/pkg/types"
 )
 
-func getCommonTestData(keepContainer string) *mocks.TestData {
-	return &mocks.TestData{
+func getCommonTestData(keepContainer string) *mockActions.TestData {
+	return &mockActions.TestData{
 		NameOfContainerToKeep: keepContainer,
 		Containers: []types.Container{
-			mocks.CreateMockContainer(
+			mockActions.CreateMockContainer(
 				"test-container-01",
 				"test-container-01",
 				"fake-image:latest",
 				time.Now().AddDate(0, 0, -1)),
-			mocks.CreateMockContainer(
+			mockActions.CreateMockContainer(
 				"test-container-02",
 				"test-container-02",
 				"fake-image:latest",
 				time.Now()),
-			mocks.CreateMockContainer(
+			mockActions.CreateMockContainer(
 				"test-container-03",
 				"test-container-03",
 				"fake-image:latest",
@@ -39,8 +39,8 @@ func getCommonTestData(keepContainer string) *mocks.TestData {
 	}
 }
 
-func getLinkedTestData(withImageInfo bool) *mocks.TestData {
-	staleContainer := mocks.CreateMockContainer(
+func getLinkedTestData(withImageInfo bool) *mockActions.TestData {
+	staleContainer := mockActions.CreateMockContainer(
 		"test-container-01",
 		"/test-container-01",
 		"fake-image1:latest",
@@ -48,10 +48,10 @@ func getLinkedTestData(withImageInfo bool) *mocks.TestData {
 
 	var imageInfo *image.InspectResponse
 	if withImageInfo {
-		imageInfo = mocks.CreateMockImageInfo("test-container-02")
+		imageInfo = mockActions.CreateMockImageInfo("test-container-02")
 	}
 
-	linkingContainer := mocks.CreateMockContainerWithLinks(
+	linkingContainer := mockActions.CreateMockContainerWithLinks(
 		"test-container-02",
 		"/test-container-02",
 		"fake-image2:latest",
@@ -59,7 +59,7 @@ func getLinkedTestData(withImageInfo bool) *mocks.TestData {
 		[]string{staleContainer.Name()},
 		imageInfo)
 
-	return &mocks.TestData{
+	return &mockActions.TestData{
 		Staleness: map[string]bool{linkingContainer.Name(): false},
 		Containers: []types.Container{
 			staleContainer,
@@ -71,10 +71,10 @@ func getLinkedTestData(withImageInfo bool) *mocks.TestData {
 var _ = ginkgo.Describe("the update action", func() {
 	ginkgo.When("updating a Watchtower container", func() {
 		ginkgo.It("should rename and start a new container without cleanup", func() {
-			client := mocks.CreateMockClient(
-				&mocks.TestData{
+			client := mockActions.CreateMockClient(
+				&mockActions.TestData{
 					Containers: []types.Container{
-						mocks.CreateMockContainerWithConfig(
+						mockActions.CreateMockContainerWithConfig(
 							"watchtower",
 							"/watchtower",
 							"watchtower:latest",
@@ -116,10 +116,10 @@ var _ = ginkgo.Describe("the update action", func() {
 		})
 
 		ginkgo.It("should skip rename with no-restart for Watchtower", func() {
-			client := mocks.CreateMockClient(
-				&mocks.TestData{
+			client := mockActions.CreateMockClient(
+				&mockActions.TestData{
 					Containers: []types.Container{
-						mocks.CreateMockContainerWithConfig(
+						mockActions.CreateMockContainerWithConfig(
 							"watchtower",
 							"/watchtower",
 							"watchtower:latest",
@@ -159,10 +159,10 @@ var _ = ginkgo.Describe("the update action", func() {
 		})
 
 		ginkgo.It("should not clean up unscoped instances when scope is specified", func() {
-			client := mocks.CreateMockClient(
-				&mocks.TestData{
+			client := mockActions.CreateMockClient(
+				&mockActions.TestData{
 					Containers: []types.Container{
-						mocks.CreateMockContainerWithConfig(
+						mockActions.CreateMockContainerWithConfig(
 							"watchtower-scoped",
 							"/watchtower-scoped",
 							"watchtower:latest",
@@ -175,7 +175,7 @@ var _ = ginkgo.Describe("the update action", func() {
 									"com.centurylinklabs.watchtower.scope": "prod",
 								},
 							}),
-						mocks.CreateMockContainerWithConfig(
+						mockActions.CreateMockContainerWithConfig(
 							"watchtower-unscoped",
 							"/watchtower-unscoped",
 							"watchtower:old",
@@ -210,10 +210,10 @@ var _ = ginkgo.Describe("the update action", func() {
 		})
 
 		ginkgo.It("should skip cleanup for shared image", func() {
-			client := mocks.CreateMockClient(
-				&mocks.TestData{
+			client := mockActions.CreateMockClient(
+				&mockActions.TestData{
 					Containers: []types.Container{
-						mocks.CreateMockContainerWithConfig(
+						mockActions.CreateMockContainerWithConfig(
 							"old",
 							"/watchtower",
 							"watchtower:latest",
@@ -223,7 +223,7 @@ var _ = ginkgo.Describe("the update action", func() {
 							&container.Config{
 								Labels: map[string]string{"com.centurylinklabs.watchtower": "true"},
 							}),
-						mocks.CreateMockContainerWithConfig(
+						mockActions.CreateMockContainerWithConfig(
 							"new",
 							"/watchtower",
 							"watchtower:latest",
@@ -256,7 +256,7 @@ var _ = ginkgo.Describe("the update action", func() {
 	ginkgo.When("watchtower has been instructed to clean up", func() {
 		ginkgo.When("there are multiple containers using the same image", func() {
 			ginkgo.It("should collect the image ID once for deferred cleanup", func() {
-				client := mocks.CreateMockClient(getCommonTestData(""), false, false)
+				client := mockActions.CreateMockClient(getCommonTestData(""), false, false)
 				client.TestData.Staleness = map[string]bool{
 					"test-container-01": true,
 					"test-container-02": true,
@@ -283,14 +283,14 @@ var _ = ginkgo.Describe("the update action", func() {
 				testData := getCommonTestData("")
 				testData.Containers = append(
 					testData.Containers,
-					mocks.CreateMockContainer(
+					mockActions.CreateMockContainer(
 						"unique-test-container",
 						"unique-test-container",
 						"unique-fake-image:latest",
 						time.Now(),
 					),
 				)
-				client := mocks.CreateMockClient(testData, false, false)
+				client := mockActions.CreateMockClient(testData, false, false)
 				client.TestData.Staleness = map[string]bool{
 					"test-container-01":     true,
 					"test-container-02":     true,
@@ -315,7 +315,7 @@ var _ = ginkgo.Describe("the update action", func() {
 
 		ginkgo.When("there are linked containers being updated", func() {
 			ginkgo.It("should collect only the stale container's image ID", func() {
-				client := mocks.CreateMockClient(getLinkedTestData(true), false, false)
+				client := mockActions.CreateMockClient(getLinkedTestData(true), false, false)
 				client.TestData.Staleness["test-container-01"] = true
 				report, cleanupImageInfos, err := actions.Update(
 					client,
@@ -333,7 +333,7 @@ var _ = ginkgo.Describe("the update action", func() {
 
 		ginkgo.When("performing a rolling restart update", func() {
 			ginkgo.It("should collect the image ID for deferred cleanup", func() {
-				client := mocks.CreateMockClient(getCommonTestData(""), false, false)
+				client := mockActions.CreateMockClient(getCommonTestData(""), false, false)
 				client.TestData.Staleness = map[string]bool{
 					"test-container-01": true,
 					"test-container-02": true,
@@ -357,7 +357,7 @@ var _ = ginkgo.Describe("the update action", func() {
 
 		ginkgo.When("updating a linked container with missing image info", func() {
 			ginkgo.It("should gracefully fail and collect no image IDs", func() {
-				client := mocks.CreateMockClient(getLinkedTestData(false), false, false)
+				client := mockActions.CreateMockClient(getLinkedTestData(false), false, false)
 				client.TestData.Staleness["test-container-01"] = true
 				report, cleanupImageInfos, err := actions.Update(
 					client,
@@ -378,16 +378,16 @@ var _ = ginkgo.Describe("the update action", func() {
 	ginkgo.When("watchtower has been instructed to monitor only", func() {
 		ginkgo.When("certain containers are set to monitor only", func() {
 			ginkgo.It("should not update those containers and collect no image IDs", func() {
-				client := mocks.CreateMockClient(
-					&mocks.TestData{
+				client := mockActions.CreateMockClient(
+					&mockActions.TestData{
 						NameOfContainerToKeep: "test-container-02",
 						Containers: []types.Container{
-							mocks.CreateMockContainer(
+							mockActions.CreateMockContainer(
 								"test-container-01",
 								"test-container-01",
 								"fake-image1:latest",
 								time.Now()),
-							mocks.CreateMockContainerWithConfig(
+							mockActions.CreateMockContainerWithConfig(
 								"test-container-02",
 								"test-container-02",
 								"fake-image2:latest",
@@ -424,15 +424,15 @@ var _ = ginkgo.Describe("the update action", func() {
 
 		ginkgo.When("monitor only is set globally", func() {
 			ginkgo.It("should not update any containers and collect no image IDs", func() {
-				client := mocks.CreateMockClient(
-					&mocks.TestData{
+				client := mockActions.CreateMockClient(
+					&mockActions.TestData{
 						Containers: []types.Container{
-							mocks.CreateMockContainer(
+							mockActions.CreateMockContainer(
 								"test-container-01",
 								"test-container-01",
 								"fake-image:latest",
 								time.Now()),
-							mocks.CreateMockContainer(
+							mockActions.CreateMockContainer(
 								"test-container-02",
 								"test-container-02",
 								"fake-image:latest",
@@ -459,10 +459,10 @@ var _ = ginkgo.Describe("the update action", func() {
 
 			ginkgo.When("watchtower has been instructed to have label take precedence", func() {
 				ginkgo.It("it should update containers when monitor only is set to false", func() {
-					client := mocks.CreateMockClient(
-						&mocks.TestData{
+					client := mockActions.CreateMockClient(
+						&mockActions.TestData{
 							Containers: []types.Container{
-								mocks.CreateMockContainerWithConfig(
+								mockActions.CreateMockContainerWithConfig(
 									"test-container-02",
 									"test-container-02",
 									"fake-image2:latest",
@@ -503,10 +503,10 @@ var _ = ginkgo.Describe("the update action", func() {
 				ginkgo.It(
 					"it should not update containers when monitor only is set to true",
 					func() {
-						client := mocks.CreateMockClient(
-							&mocks.TestData{
+						client := mockActions.CreateMockClient(
+							&mockActions.TestData{
 								Containers: []types.Container{
-									mocks.CreateMockContainerWithConfig(
+									mockActions.CreateMockContainerWithConfig(
 										"test-container-02",
 										"test-container-02",
 										"fake-image2:latest",
@@ -544,10 +544,10 @@ var _ = ginkgo.Describe("the update action", func() {
 				)
 
 				ginkgo.It("it should not update containers when monitor only is not set", func() {
-					client := mocks.CreateMockClient(
-						&mocks.TestData{
+					client := mockActions.CreateMockClient(
+						&mockActions.TestData{
 							Containers: []types.Container{
-								mocks.CreateMockContainer(
+								mockActions.CreateMockContainer(
 									"test-container-01",
 									"test-container-01",
 									"fake-image:latest",
@@ -582,10 +582,10 @@ var _ = ginkgo.Describe("the update action", func() {
 	ginkgo.When("watchtower has been instructed to run lifecycle hooks", func() {
 		ginkgo.When("pre-update script returns 1", func() {
 			ginkgo.It("should not update those containers and collect no image IDs", func() {
-				client := mocks.CreateMockClient(
-					&mocks.TestData{
+				client := mockActions.CreateMockClient(
+					&mockActions.TestData{
 						Containers: []types.Container{
-							mocks.CreateMockContainerWithConfig(
+							mockActions.CreateMockContainerWithConfig(
 								"test-container-02",
 								"test-container-02",
 								"fake-image2:latest",
@@ -625,10 +625,10 @@ var _ = ginkgo.Describe("the update action", func() {
 
 		ginkgo.When("lifecycle UID and GID are specified", func() {
 			ginkgo.It("should pass UID and GID to lifecycle hook execution", func() {
-				client := mocks.CreateMockClient(
-					&mocks.TestData{
+				client := mockActions.CreateMockClient(
+					&mockActions.TestData{
 						Containers: []types.Container{
-							mocks.CreateMockContainerWithConfig(
+							mockActions.CreateMockContainerWithConfig(
 								"test-container-uid-gid",
 								"test-container-uid-gid",
 								"fake-image:latest",
@@ -671,10 +671,10 @@ var _ = ginkgo.Describe("the update action", func() {
 
 		ginkgo.When("preupdate script returns 75", func() {
 			ginkgo.It("should not update those containers and collect no image IDs", func() {
-				client := mocks.CreateMockClient(
-					&mocks.TestData{
+				client := mockActions.CreateMockClient(
+					&mockActions.TestData{
 						Containers: []types.Container{
-							mocks.CreateMockContainerWithConfig(
+							mockActions.CreateMockContainerWithConfig(
 								"test-container-02",
 								"test-container-02",
 								"fake-image2:latest",
@@ -714,10 +714,10 @@ var _ = ginkgo.Describe("the update action", func() {
 
 		ginkgo.When("preupdate script returns 0", func() {
 			ginkgo.It("should update those containers and collect image IDs", func() {
-				client := mocks.CreateMockClient(
-					&mocks.TestData{
+				client := mockActions.CreateMockClient(
+					&mockActions.TestData{
 						Containers: []types.Container{
-							mocks.CreateMockContainerWithConfig(
+							mockActions.CreateMockContainerWithConfig(
 								"test-container-02",
 								"test-container-02",
 								"fake-image2:latest",
@@ -759,7 +759,7 @@ var _ = ginkgo.Describe("the update action", func() {
 
 		ginkgo.When("container is linked to restarting containers", func() {
 			ginkgo.It("should be marked for restart and collect image IDs", func() {
-				provider := mocks.CreateMockContainerWithConfig(
+				provider := mockActions.CreateMockContainerWithConfig(
 					"test-container-provider",
 					"/test-container-provider",
 					"fake-image2:latest",
@@ -773,7 +773,7 @@ var _ = ginkgo.Describe("the update action", func() {
 
 				provider.SetStale(true)
 
-				consumer := mocks.CreateMockContainerWithConfig(
+				consumer := mockActions.CreateMockContainerWithConfig(
 					"test-container-consumer",
 					"/test-container-consumer",
 					"fake-image3:latest",
@@ -804,10 +804,10 @@ var _ = ginkgo.Describe("the update action", func() {
 
 		ginkgo.When("container is not running", func() {
 			ginkgo.It("should skip running preupdate and collect image IDs", func() {
-				client := mocks.CreateMockClient(
-					&mocks.TestData{
+				client := mockActions.CreateMockClient(
+					&mockActions.TestData{
 						Containers: []types.Container{
-							mocks.CreateMockContainerWithConfig(
+							mockActions.CreateMockContainerWithConfig(
 								"test-container-02",
 								"test-container-02",
 								"fake-image2:latest",
@@ -849,10 +849,10 @@ var _ = ginkgo.Describe("the update action", func() {
 
 		ginkgo.When("container is restarting", func() {
 			ginkgo.It("should skip running preupdate and collect image IDs", func() {
-				client := mocks.CreateMockClient(
-					&mocks.TestData{
+				client := mockActions.CreateMockClient(
+					&mockActions.TestData{
 						Containers: []types.Container{
-							mocks.CreateMockContainerWithConfig(
+							mockActions.CreateMockContainerWithConfig(
 								"test-container-02",
 								"test-container-02",
 								"fake-image2:latest",
@@ -895,7 +895,7 @@ var _ = ginkgo.Describe("the update action", func() {
 
 	// Tests for image reference handling to cover isPinned functionality
 	ginkgo.When("handling different image reference formats", func() {
-		var client *mocks.MockClient
+		var client *mockActions.MockClient
 		var config actions.UpdateConfig
 
 		ginkgo.BeforeEach(func() {
@@ -908,11 +908,11 @@ var _ = ginkgo.Describe("the update action", func() {
 
 		ginkgo.It("should process tagged images and update if stale", func() {
 			count := 0
-			client = &mocks.MockClient{
-				TestData: &mocks.TestData{
+			client = &mockActions.MockClient{
+				TestData: &mockActions.TestData{
 					IsContainerStaleCount: count,
 					Containers: []types.Container{
-						mocks.CreateMockContainer(
+						mockActions.CreateMockContainer(
 							"tagged-container",
 							"/tagged-container",
 							"image:1.0.0",
@@ -938,11 +938,11 @@ var _ = ginkgo.Describe("the update action", func() {
 
 		ginkgo.It("should process untagged images and update if stale", func() {
 			count := 0
-			client = &mocks.MockClient{
-				TestData: &mocks.TestData{
+			client = &mockActions.MockClient{
+				TestData: &mockActions.TestData{
 					IsContainerStaleCount: count,
 					Containers: []types.Container{
-						mocks.CreateMockContainer(
+						mockActions.CreateMockContainer(
 							"untagged-container",
 							"/untagged-container",
 							"image",
@@ -968,11 +968,11 @@ var _ = ginkgo.Describe("the update action", func() {
 
 		ginkgo.It("should skip pinned containers and not collect image IDs", func() {
 			count := 0
-			client = &mocks.MockClient{
-				TestData: &mocks.TestData{
+			client = &mockActions.MockClient{
+				TestData: &mockActions.TestData{
 					IsContainerStaleCount: count,
 					Containers: []types.Container{
-						mocks.CreateMockContainer(
+						mockActions.CreateMockContainer(
 							"pinned-container",
 							"/pinned-container",
 							"image@sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
@@ -1003,11 +1003,11 @@ var _ = ginkgo.Describe("the update action", func() {
 			"should skip pinned containers with tag and digest and not collect image IDs",
 			func() {
 				count := 0
-				client = &mocks.MockClient{
-					TestData: &mocks.TestData{
+				client = &mockActions.MockClient{
+					TestData: &mockActions.TestData{
 						IsContainerStaleCount: count,
 						Containers: []types.Container{
-							mocks.CreateMockContainer(
+							mockActions.CreateMockContainer(
 								"pinned-tagged-container",
 								"/pinned-tagged-container",
 								"image:latest@sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
@@ -1037,11 +1037,11 @@ var _ = ginkgo.Describe("the update action", func() {
 
 		ginkgo.It("should skip invalid image references with error", func() {
 			count := 0
-			client = &mocks.MockClient{
-				TestData: &mocks.TestData{
+			client = &mockActions.MockClient{
+				TestData: &mockActions.TestData{
 					IsContainerStaleCount: count,
 					Containers: []types.Container{
-						mocks.CreateMockContainer(
+						mockActions.CreateMockContainer(
 							"invalid-container",
 							"/invalid-container",
 							":latest",
@@ -1073,11 +1073,11 @@ var _ = ginkgo.Describe("the update action", func() {
 			"should skip containers with missing Config.Image and imageInfo.ID with error",
 			func() {
 				count := 0
-				client = &mocks.MockClient{
-					TestData: &mocks.TestData{
+				client = &mockActions.MockClient{
+					TestData: &mockActions.TestData{
 						IsContainerStaleCount: count,
 						Containers: []types.Container{
-							mocks.CreateMockContainerWithImageInfoP(
+							mockActions.CreateMockContainerWithImageInfoP(
 								"edge-container",
 								"/edge-container",
 								"",
@@ -1110,11 +1110,11 @@ var _ = ginkgo.Describe("the update action", func() {
 
 		ginkgo.It("should skip containers with invalid fallback image reference", func() {
 			count := 0
-			client = &mocks.MockClient{
-				TestData: &mocks.TestData{
+			client = &mockActions.MockClient{
+				TestData: &mockActions.TestData{
 					IsContainerStaleCount: count,
 					Containers: []types.Container{
-						mocks.CreateMockContainer(
+						mockActions.CreateMockContainer(
 							"InvalidContainer",
 							"/InvalidContainer",
 							":latest",
@@ -1143,10 +1143,10 @@ var _ = ginkgo.Describe("the update action", func() {
 
 	ginkgo.When("Watchtower self-update pull fails", func() {
 		ginkgo.It("should apply safeguard delay to prevent rapid restarts", func() {
-			client := mocks.CreateMockClient(
-				&mocks.TestData{
+			client := mockActions.CreateMockClient(
+				&mockActions.TestData{
 					Containers: []types.Container{
-						mocks.CreateMockContainerWithConfig(
+						mockActions.CreateMockContainerWithConfig(
 							"watchtower",
 							"/watchtower",
 							"watchtower:latest",
@@ -1196,10 +1196,10 @@ var _ = ginkgo.Describe("the update action", func() {
 
 	ginkgo.When("restarting stale Watchtower containers in non-rolling mode", func() {
 		ginkgo.It("should restart stale Watchtower containers even if stop is skipped", func() {
-			client := mocks.CreateMockClient(
-				&mocks.TestData{
+			client := mockActions.CreateMockClient(
+				&mockActions.TestData{
 					Containers: []types.Container{
-						mocks.CreateMockContainerWithConfig(
+						mockActions.CreateMockContainerWithConfig(
 							"watchtower",
 							"/watchtower",
 							"watchtower:latest",

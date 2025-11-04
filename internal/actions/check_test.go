@@ -9,7 +9,7 @@ import (
 	"github.com/onsi/gomega"
 
 	"github.com/nicholas-fedor/watchtower/internal/actions"
-	"github.com/nicholas-fedor/watchtower/internal/actions/mocks"
+	mockActions "github.com/nicholas-fedor/watchtower/internal/actions/mocks"
 	"github.com/nicholas-fedor/watchtower/pkg/filters"
 	"github.com/nicholas-fedor/watchtower/pkg/types"
 )
@@ -17,7 +17,7 @@ import (
 var _ = ginkgo.Describe("CheckForSanity", func() {
 	ginkgo.When("rolling restarts are disabled", func() {
 		ginkgo.It("should return nil without checking containers", func() {
-			client := mocks.CreateMockClient(&mocks.TestData{}, false, false)
+			client := mockActions.CreateMockClient(&mockActions.TestData{}, false, false)
 
 			err := actions.CheckForSanity(client, filters.NoFilter, false)
 
@@ -27,16 +27,16 @@ var _ = ginkgo.Describe("CheckForSanity", func() {
 
 	ginkgo.When("rolling restarts are enabled", func() {
 		ginkgo.It("should return nil when no containers have links", func() {
-			client := mocks.CreateMockClient(
-				&mocks.TestData{
+			client := mockActions.CreateMockClient(
+				&mockActions.TestData{
 					Containers: []types.Container{
-						mocks.CreateMockContainer(
+						mockActions.CreateMockContainer(
 							"container1",
 							"container1",
 							"image:latest",
 							time.Now(),
 						),
-						mocks.CreateMockContainer(
+						mockActions.CreateMockContainer(
 							"container2",
 							"container2",
 							"image:latest",
@@ -54,20 +54,20 @@ var _ = ginkgo.Describe("CheckForSanity", func() {
 		})
 
 		ginkgo.It("should return error when container has links", func() {
-			containerWithLinks := mocks.CreateMockContainerWithLinks(
+			containerWithLinks := mockActions.CreateMockContainerWithLinks(
 				"container1",
 				"container1",
 				"image:latest",
 				time.Now(),
 				[]string{"container2"},
-				mocks.CreateMockImageInfo("image:latest"),
+				mockActions.CreateMockImageInfo("image:latest"),
 			)
 
-			client := mocks.CreateMockClient(
-				&mocks.TestData{
+			client := mockActions.CreateMockClient(
+				&mockActions.TestData{
 					Containers: []types.Container{
 						containerWithLinks,
-						mocks.CreateMockContainer(
+						mockActions.CreateMockContainer(
 							"container2",
 							"container2",
 							"image:latest",
@@ -91,10 +91,10 @@ var _ = ginkgo.Describe("CheckForSanity", func() {
 var _ = ginkgo.Describe("CheckForMultipleWatchtowerInstances", func() {
 	ginkgo.When("no scope is specified", func() {
 		ginkgo.It("should return nil when only one instance exists", func() {
-			client := mocks.CreateMockClient(
-				&mocks.TestData{
+			client := mockActions.CreateMockClient(
+				&mockActions.TestData{
 					Containers: []types.Container{
-						mocks.CreateMockContainerWithConfig(
+						mockActions.CreateMockContainerWithConfig(
 							"watchtower",
 							"watchtower",
 							"watchtower:latest",
@@ -129,10 +129,10 @@ var _ = ginkgo.Describe("CheckForMultipleWatchtowerInstances", func() {
 		ginkgo.It(
 			"should stop excess instances and collect image IDs when cleanup enabled",
 			func() {
-				client := mocks.CreateMockClient(
-					&mocks.TestData{
+				client := mockActions.CreateMockClient(
+					&mockActions.TestData{
 						Containers: []types.Container{
-							mocks.CreateMockContainerWithConfig(
+							mockActions.CreateMockContainerWithConfig(
 								"watchtower-old",
 								"watchtower-old",
 								"watchtower:old",
@@ -145,7 +145,7 @@ var _ = ginkgo.Describe("CheckForMultipleWatchtowerInstances", func() {
 									},
 								},
 							),
-							mocks.CreateMockContainerWithConfig(
+							mockActions.CreateMockContainerWithConfig(
 								"watchtower-new",
 								"watchtower-new",
 								"watchtower:new",
@@ -182,10 +182,10 @@ var _ = ginkgo.Describe("CheckForMultipleWatchtowerInstances", func() {
 
 	ginkgo.When("scope is specified", func() {
 		ginkgo.It("should only clean up instances in the same scope", func() {
-			client := mocks.CreateMockClient(
-				&mocks.TestData{
+			client := mockActions.CreateMockClient(
+				&mockActions.TestData{
 					Containers: []types.Container{
-						mocks.CreateMockContainerWithConfig(
+						mockActions.CreateMockContainerWithConfig(
 							"watchtower-scoped",
 							"watchtower-scoped",
 							"watchtower:latest",
@@ -199,7 +199,7 @@ var _ = ginkgo.Describe("CheckForMultipleWatchtowerInstances", func() {
 								},
 							},
 						),
-						mocks.CreateMockContainerWithConfig(
+						mockActions.CreateMockContainerWithConfig(
 							"watchtower-unscoped",
 							"watchtower-unscoped",
 							"watchtower:latest",
@@ -232,10 +232,10 @@ var _ = ginkgo.Describe("CheckForMultipleWatchtowerInstances", func() {
 			gomega.Expect(cleanupImageIDs).To(gomega.BeEmpty())
 		})
 		ginkgo.It("should clean up multiple instances within the same scope", func() {
-			client := mocks.CreateMockClient(
-				&mocks.TestData{
+			client := mockActions.CreateMockClient(
+				&mockActions.TestData{
 					Containers: []types.Container{
-						mocks.CreateMockContainerWithConfig(
+						mockActions.CreateMockContainerWithConfig(
 							"watchtower-prod-old",
 							"watchtower-prod-old",
 							"watchtower:1.11.0",
@@ -249,7 +249,7 @@ var _ = ginkgo.Describe("CheckForMultipleWatchtowerInstances", func() {
 								},
 							},
 						),
-						mocks.CreateMockContainerWithConfig(
+						mockActions.CreateMockContainerWithConfig(
 							"watchtower-prod-new",
 							"watchtower-prod-new",
 							"watchtower:1.12.0",
@@ -263,7 +263,7 @@ var _ = ginkgo.Describe("CheckForMultipleWatchtowerInstances", func() {
 								},
 							},
 						),
-						mocks.CreateMockContainerWithConfig(
+						mockActions.CreateMockContainerWithConfig(
 							"watchtower-dev",
 							"watchtower-dev",
 							"watchtower:1.12.0",
@@ -300,10 +300,10 @@ var _ = ginkgo.Describe("CheckForMultipleWatchtowerInstances", func() {
 		})
 
 		ginkgo.It("should return false when only one instance exists in scope", func() {
-			client := mocks.CreateMockClient(
-				&mocks.TestData{
+			client := mockActions.CreateMockClient(
+				&mockActions.TestData{
 					Containers: []types.Container{
-						mocks.CreateMockContainerWithConfig(
+						mockActions.CreateMockContainerWithConfig(
 							"watchtower-prod",
 							"watchtower-prod",
 							"watchtower:latest",
@@ -317,7 +317,7 @@ var _ = ginkgo.Describe("CheckForMultipleWatchtowerInstances", func() {
 								},
 							},
 						),
-						mocks.CreateMockContainerWithConfig(
+						mockActions.CreateMockContainerWithConfig(
 							"watchtower-dev",
 							"watchtower-dev",
 							"watchtower:latest",
@@ -353,10 +353,10 @@ var _ = ginkgo.Describe("CheckForMultipleWatchtowerInstances", func() {
 
 	ginkgo.When("cleanup is disabled", func() {
 		ginkgo.It("should stop excess instances but not collect image IDs", func() {
-			client := mocks.CreateMockClient(
-				&mocks.TestData{
+			client := mockActions.CreateMockClient(
+				&mockActions.TestData{
 					Containers: []types.Container{
-						mocks.CreateMockContainerWithConfig(
+						mockActions.CreateMockContainerWithConfig(
 							"watchtower-old",
 							"watchtower-old",
 							"watchtower:old",
@@ -369,7 +369,7 @@ var _ = ginkgo.Describe("CheckForMultipleWatchtowerInstances", func() {
 								},
 							},
 						),
-						mocks.CreateMockContainerWithConfig(
+						mockActions.CreateMockContainerWithConfig(
 							"watchtower-new",
 							"watchtower-new",
 							"watchtower:new",
@@ -405,7 +405,7 @@ var _ = ginkgo.Describe("CheckForMultipleWatchtowerInstances", func() {
 
 	ginkgo.When("error scenarios", func() {
 		ginkgo.It("should return error when ListContainers fails", func() {
-			client := mocks.CreateMockClient(&mocks.TestData{
+			client := mockActions.CreateMockClient(&mockActions.TestData{
 				ListContainersError: errors.New("list containers failed"),
 			}, false, false)
 
@@ -424,10 +424,10 @@ var _ = ginkgo.Describe("CheckForMultipleWatchtowerInstances", func() {
 		})
 
 		ginkgo.It("should return error when stopping container fails", func() {
-			client := mocks.CreateMockClient(
-				&mocks.TestData{
+			client := mockActions.CreateMockClient(
+				&mockActions.TestData{
 					Containers: []types.Container{
-						mocks.CreateMockContainerWithConfig(
+						mockActions.CreateMockContainerWithConfig(
 							"watchtower-old",
 							"watchtower-old",
 							"watchtower:old",
@@ -440,7 +440,7 @@ var _ = ginkgo.Describe("CheckForMultipleWatchtowerInstances", func() {
 								},
 							},
 						),
-						mocks.CreateMockContainerWithConfig(
+						mockActions.CreateMockContainerWithConfig(
 							"watchtower-new",
 							"watchtower-new",
 							"watchtower:new",
@@ -477,10 +477,10 @@ var _ = ginkgo.Describe("CheckForMultipleWatchtowerInstances", func() {
 		})
 
 		ginkgo.It("should continue cleanup when some containers fail to stop", func() {
-			client := mocks.CreateMockClient(
-				&mocks.TestData{
+			client := mockActions.CreateMockClient(
+				&mockActions.TestData{
 					Containers: []types.Container{
-						mocks.CreateMockContainerWithConfig(
+						mockActions.CreateMockContainerWithConfig(
 							"watchtower-old1",
 							"watchtower-old1",
 							"watchtower:old1",
@@ -493,7 +493,7 @@ var _ = ginkgo.Describe("CheckForMultipleWatchtowerInstances", func() {
 								},
 							},
 						),
-						mocks.CreateMockContainerWithConfig(
+						mockActions.CreateMockContainerWithConfig(
 							"watchtower-old2",
 							"watchtower-old2",
 							"watchtower:old2",
@@ -506,7 +506,7 @@ var _ = ginkgo.Describe("CheckForMultipleWatchtowerInstances", func() {
 								},
 							},
 						),
-						mocks.CreateMockContainerWithConfig(
+						mockActions.CreateMockContainerWithConfig(
 							"watchtower-new",
 							"watchtower-new",
 							"watchtower:new",
@@ -549,10 +549,10 @@ var _ = ginkgo.Describe("CheckForMultipleWatchtowerInstances", func() {
 		ginkgo.It(
 			"should not collect image ID when excess container shares image with newest",
 			func() {
-				client := mocks.CreateMockClient(
-					&mocks.TestData{
+				client := mockActions.CreateMockClient(
+					&mockActions.TestData{
 						Containers: []types.Container{
-							mocks.CreateMockContainerWithConfig(
+							mockActions.CreateMockContainerWithConfig(
 								"watchtower-old",
 								"watchtower-old",
 								"watchtower:latest",
@@ -565,7 +565,7 @@ var _ = ginkgo.Describe("CheckForMultipleWatchtowerInstances", func() {
 									},
 								},
 							),
-							mocks.CreateMockContainerWithConfig(
+							mockActions.CreateMockContainerWithConfig(
 								"watchtower-new",
 								"watchtower-new",
 								"watchtower:latest",
@@ -599,10 +599,10 @@ var _ = ginkgo.Describe("CheckForMultipleWatchtowerInstances", func() {
 		)
 
 		ginkgo.It("should skip empty image IDs", func() {
-			client := mocks.CreateMockClient(
-				&mocks.TestData{
+			client := mockActions.CreateMockClient(
+				&mockActions.TestData{
 					Containers: []types.Container{
-						mocks.CreateMockContainerWithConfig(
+						mockActions.CreateMockContainerWithConfig(
 							"watchtower-old",
 							"watchtower-old",
 							"", // Empty image ID
@@ -615,7 +615,7 @@ var _ = ginkgo.Describe("CheckForMultipleWatchtowerInstances", func() {
 								},
 							},
 						),
-						mocks.CreateMockContainerWithConfig(
+						mockActions.CreateMockContainerWithConfig(
 							"watchtower-new",
 							"watchtower-new",
 							"watchtower:new",
@@ -651,7 +651,7 @@ var _ = ginkgo.Describe("CheckForMultipleWatchtowerInstances", func() {
 
 var _ = ginkgo.Describe("CleanupImages", func() {
 	ginkgo.It("should do nothing when no images are provided", func() {
-		client := mocks.CreateMockClient(&mocks.TestData{}, false, false)
+		client := mockActions.CreateMockClient(&mockActions.TestData{}, false, false)
 
 		cleaned, err := actions.CleanupImages(client, nil)
 		gomega.Expect(err).NotTo(gomega.HaveOccurred())
@@ -660,7 +660,7 @@ var _ = ginkgo.Describe("CleanupImages", func() {
 	})
 
 	ginkgo.It("should attempt to remove each image ID", func() {
-		client := mocks.CreateMockClient(&mocks.TestData{}, false, false)
+		client := mockActions.CreateMockClient(&mockActions.TestData{}, false, false)
 
 		cleanedImages := []types.CleanedImageInfo{
 			{ImageID: "image1"},
@@ -677,7 +677,7 @@ var _ = ginkgo.Describe("CleanupImages", func() {
 	})
 
 	ginkgo.It("should return error when image removal fails", func() {
-		client := mocks.CreateMockClient(&mocks.TestData{
+		client := mockActions.CreateMockClient(&mockActions.TestData{
 			RemoveImageError: errors.New("image removal failed"),
 			FailedImageIDs:   []types.ImageID{"image2"},
 		}, false, false)

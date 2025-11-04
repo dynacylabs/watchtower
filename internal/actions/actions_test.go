@@ -11,10 +11,10 @@ import (
 	"github.com/stretchr/testify/mock"
 
 	"github.com/nicholas-fedor/watchtower/internal/actions"
-	actionMocks "github.com/nicholas-fedor/watchtower/internal/actions/mocks"
+	mockActions "github.com/nicholas-fedor/watchtower/internal/actions/mocks"
 	"github.com/nicholas-fedor/watchtower/pkg/filters"
 	"github.com/nicholas-fedor/watchtower/pkg/types"
-	"github.com/nicholas-fedor/watchtower/pkg/types/mocks"
+	mockTypes "github.com/nicholas-fedor/watchtower/pkg/types/mocks"
 )
 
 const (
@@ -29,7 +29,7 @@ const (
 
 var _ = ginkgo.Describe("RunUpdatesWithNotifications", func() {
 	var (
-		client actionMocks.MockClient
+		client mockActions.MockClient
 		filter types.Filter
 	)
 
@@ -39,10 +39,10 @@ var _ = ginkgo.Describe("RunUpdatesWithNotifications", func() {
 
 	ginkgo.When("notifier is nil", func() {
 		ginkgo.It("should not start notification batching", func() {
-			client = actionMocks.CreateMockClient(
-				&actionMocks.TestData{
+			client = mockActions.CreateMockClient(
+				&mockActions.TestData{
 					Containers: []types.Container{
-						actionMocks.CreateMockContainer(
+						mockActions.CreateMockContainer(
 							"test-container",
 							"test-container",
 							"image:latest",
@@ -83,17 +83,17 @@ var _ = ginkgo.Describe("RunUpdatesWithNotifications", func() {
 	})
 
 	ginkgo.When("notifier is provided", func() {
-		var notifier *mocks.MockNotifier
+		var notifier *mockTypes.MockNotifier
 
 		ginkgo.BeforeEach(func() {
-			notifier = mocks.NewMockNotifier(ginkgo.GinkgoT())
+			notifier = mockTypes.NewMockNotifier(ginkgo.GinkgoT())
 		})
 
 		ginkgo.It("should start notification batching", func() {
-			client = actionMocks.CreateMockClient(
-				&actionMocks.TestData{
+			client = mockActions.CreateMockClient(
+				&mockActions.TestData{
 					Containers: []types.Container{
-						actionMocks.CreateMockContainer(
+						mockActions.CreateMockContainer(
 							"test-container",
 							"test-container",
 							"image:latest",
@@ -138,10 +138,10 @@ var _ = ginkgo.Describe("RunUpdatesWithNotifications", func() {
 		})
 
 		ginkgo.It("should handle notification split by container", func() {
-			client = actionMocks.CreateMockClient(
-				&actionMocks.TestData{
+			client = mockActions.CreateMockClient(
+				&mockActions.TestData{
 					Containers: []types.Container{
-						actionMocks.CreateMockContainerWithConfig(
+						mockActions.CreateMockContainerWithConfig(
 							"test-container",
 							"test-container",
 							"image:latest",
@@ -187,10 +187,10 @@ var _ = ginkgo.Describe("RunUpdatesWithNotifications", func() {
 		})
 
 		ginkgo.It("should handle standard grouped notifications", func() {
-			client = actionMocks.CreateMockClient(
-				&actionMocks.TestData{
+			client = mockActions.CreateMockClient(
+				&mockActions.TestData{
 					Containers: []types.Container{
-						actionMocks.CreateMockContainer(
+						mockActions.CreateMockContainer(
 							"test-container",
 							"test-container",
 							"image:latest",
@@ -237,10 +237,10 @@ var _ = ginkgo.Describe("RunUpdatesWithNotifications", func() {
 			ginkgo.It(
 				"should send notifications for monitor-only containers with stale images",
 				func() {
-					client = actionMocks.CreateMockClient(
-						&actionMocks.TestData{
+					client = mockActions.CreateMockClient(
+						&mockActions.TestData{
 							Containers: []types.Container{
-								actionMocks.CreateMockContainerWithConfig(
+								mockActions.CreateMockContainerWithConfig(
 									monitorOnlyContainerName,
 									monitorOnlyContainerName,
 									"image:v1.0",
@@ -311,10 +311,10 @@ var _ = ginkgo.Describe("RunUpdatesWithNotifications", func() {
 			)
 
 			ginkgo.It("should send one notification per updated container", func() {
-				client = actionMocks.CreateMockClient(
-					&actionMocks.TestData{
+				client = mockActions.CreateMockClient(
+					&mockActions.TestData{
 						Containers: []types.Container{
-							actionMocks.CreateMockContainerWithConfig(
+							mockActions.CreateMockContainerWithConfig(
 								"container-1",
 								"container-1",
 								"image:v1.0",
@@ -323,7 +323,7 @@ var _ = ginkgo.Describe("RunUpdatesWithNotifications", func() {
 								time.Now().Add(-time.Hour),
 								&container.Config{},
 							),
-							actionMocks.CreateMockContainerWithConfig(
+							mockActions.CreateMockContainerWithConfig(
 								"container-2",
 								"container-2",
 								"image:v2.0",
@@ -332,7 +332,7 @@ var _ = ginkgo.Describe("RunUpdatesWithNotifications", func() {
 								time.Now().Add(-time.Hour),
 								&container.Config{},
 							),
-							actionMocks.CreateMockContainerWithConfig(
+							mockActions.CreateMockContainerWithConfig(
 								"container-3",
 								"container-3",
 								"image:v3.0",
@@ -428,10 +428,10 @@ var _ = ginkgo.Describe("RunUpdatesWithNotifications", func() {
 			})
 
 			ginkgo.It("should not send notifications when no containers are updated", func() {
-				client = actionMocks.CreateMockClient(
-					&actionMocks.TestData{
+				client = mockActions.CreateMockClient(
+					&mockActions.TestData{
 						Containers: []types.Container{
-							actionMocks.CreateMockContainer(
+							mockActions.CreateMockContainer(
 								"fresh-container",
 								"fresh-container",
 								"image:latest",
@@ -477,10 +477,10 @@ var _ = ginkgo.Describe("RunUpdatesWithNotifications", func() {
 			})
 
 			ginkgo.It("should skip containers with empty names", func() {
-				client = actionMocks.CreateMockClient(
-					&actionMocks.TestData{
+				client = mockActions.CreateMockClient(
+					&mockActions.TestData{
 						Containers: []types.Container{
-							actionMocks.CreateMockContainerWithConfig(
+							mockActions.CreateMockContainerWithConfig(
 								"unnamed-container",
 								"", // Empty name
 								"image:v1.0",
@@ -489,7 +489,7 @@ var _ = ginkgo.Describe("RunUpdatesWithNotifications", func() {
 								time.Now().Add(-time.Hour),
 								&container.Config{},
 							),
-							actionMocks.CreateMockContainerWithConfig(
+							mockActions.CreateMockContainerWithConfig(
 								"valid-container",
 								"valid-container",
 								"image:v2.0",
@@ -555,10 +555,10 @@ var _ = ginkgo.Describe("RunUpdatesWithNotifications", func() {
 			})
 
 			ginkgo.It("should ensure no duplicate notifications are sent", func() {
-				client = actionMocks.CreateMockClient(
-					&actionMocks.TestData{
+				client = mockActions.CreateMockClient(
+					&mockActions.TestData{
 						Containers: []types.Container{
-							actionMocks.CreateMockContainerWithConfig(
+							mockActions.CreateMockContainerWithConfig(
 								"duplicate-test",
 								"duplicate-test",
 								"image:v1.0",
@@ -628,7 +628,7 @@ var _ = ginkgo.Describe("RunUpdatesWithNotifications", func() {
 				func() {
 					// Create a container that will appear in both Updated and Stale lists
 					// This simulates a container that was updated but also marked as stale (monitor-only)
-					duplicateContainer := actionMocks.CreateMockContainerWithConfig(
+					duplicateContainer := mockActions.CreateMockContainerWithConfig(
 						duplicateContainerName,
 						duplicateContainerName,
 						"image:v1.0",
@@ -642,8 +642,8 @@ var _ = ginkgo.Describe("RunUpdatesWithNotifications", func() {
 						},
 					)
 
-					client = actionMocks.CreateMockClient(
-						&actionMocks.TestData{
+					client = mockActions.CreateMockClient(
+						&mockActions.TestData{
 							Containers: []types.Container{
 								duplicateContainer,
 							},
@@ -709,10 +709,10 @@ var _ = ginkgo.Describe("RunUpdatesWithNotifications", func() {
 
 	ginkgo.When("cleanup is enabled", func() {
 		ginkgo.It("should call CleanupImages", func() {
-			client = actionMocks.CreateMockClient(
-				&actionMocks.TestData{
+			client = mockActions.CreateMockClient(
+				&mockActions.TestData{
 					Containers: []types.Container{
-						actionMocks.CreateMockContainer(
+						mockActions.CreateMockContainer(
 							"test-container",
 							"test-container",
 							"image:latest",
@@ -752,10 +752,10 @@ var _ = ginkgo.Describe("RunUpdatesWithNotifications", func() {
 
 	ginkgo.When("update fails", func() {
 		ginkgo.It("should return zero metric on error", func() {
-			client = actionMocks.CreateMockClient(
-				&actionMocks.TestData{
+			client = mockActions.CreateMockClient(
+				&mockActions.TestData{
 					Containers: []types.Container{
-						actionMocks.CreateMockContainer(
+						mockActions.CreateMockContainer(
 							"test-container",
 							"test-container",
 							"image:latest",
