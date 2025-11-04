@@ -29,43 +29,6 @@ const (
 	ContainerRemainsRunningMessage = "Container remains running (monitor-only mode)"
 )
 
-// handleUpdateResult processes the result of an update operation and returns an appropriate metric.
-//
-// It checks for errors or nil results, logging accordingly, and returns a zero metric on failure
-// or nil on success to indicate continuation of the update process.
-//
-// Parameters:
-//   - result: The report from the update operation.
-//   - err: Any error encountered during the update.
-//
-// Returns:
-//   - *metrics.Metric: A zero metric if an error occurred or result is nil, nil otherwise.
-func handleUpdateResult(result types.Report, err error) *metrics.Metric {
-	// Check for errors during update execution
-	if err != nil {
-		logrus.WithError(err).Error("Update execution failed")
-
-		return &metrics.Metric{
-			Scanned: 0,
-			Updated: 0,
-			Failed:  0,
-		}
-	}
-
-	// Check if update result is nil
-	if result == nil {
-		logrus.Debug("Update result is nil, returning zero metric")
-
-		return &metrics.Metric{
-			Scanned: 0,
-			Updated: 0,
-			Failed:  0,
-		}
-	}
-
-	return nil
-}
-
 // RunUpdatesWithNotificationsParams holds the parameters for RunUpdatesWithNotifications.
 type RunUpdatesWithNotificationsParams struct {
 	Client                       container.Client
@@ -169,145 +132,6 @@ func RunUpdatesWithNotifications(params RunUpdatesWithNotificationsParams) *metr
 	return generateAndLogMetric(result)
 }
 
-// buildSingleContainerReport creates a SingleContainerReport for a specific updated container.
-//
-// It populates the report with the updated container as the primary item and includes
-// all other session results (scanned, failed, skipped, stale, fresh) for comprehensive context.
-//
-// Parameters:
-//   - updatedContainer: The container that was updated.
-//   - result: The full session report containing all container statuses.
-//
-// Returns:
-//   - *session.SingleContainerReport: A report focused on the updated container with full session context.
-func buildSingleContainerReport(
-	updatedContainer types.ContainerReport,
-	result types.Report,
-) *session.SingleContainerReport {
-	return &session.SingleContainerReport{
-		UpdatedReports: []types.ContainerReport{updatedContainer},
-		ScannedReports: result.Scanned(),
-		FailedReports:  result.Failed(),
-		SkippedReports: result.Skipped(),
-		StaleReports:   result.Stale(),
-		FreshReports:   result.Fresh(),
-	}
-}
-
-// buildCleanupEntriesForContainer constructs log entries for cleaned image events specific to a container.
-//
-// It creates a logrus.Entry struct for each cleaned image associated with the specified container
-// using a standardized message "Removing image" with the image name and ID in the entry data.
-//
-// Parameters:
-//   - cleanedImages: Slice of CleanedImageInfo containing details of cleaned images.
-//   - containerName: Name of the container to filter cleanup entries for.
-//
-// Returns:
-//   - []*logrus.Entry: A slice of log entries for the cleaned images associated with the container.
-func buildCleanupEntriesForContainer(
-	cleanedImages []types.CleanedImageInfo,
-	containerName string,
-) []*logrus.Entry {
-	entries := make([]*logrus.Entry, 0)
-	now := time.Now()
-
-	for _, cleanedImage := range cleanedImages {
-		if cleanedImage.ContainerName == containerName {
-			entry := &logrus.Entry{
-				Level:   logrus.InfoLevel,
-				Message: "Removing image",
-				Data: logrus.Fields{
-					"container_name": cleanedImage.ContainerName,
-					"image_name":     cleanedImage.ImageName,
-					"image_id":       cleanedImage.ImageID.ShortID(),
-				},
-				Time: now,
-			}
-			entries = append(entries, entry)
-		}
-	}
-
-	return entries
-}
-
-// buildUpdateEntries constructs log entries for container update events.
-//
-// It creates three logrus.Entry structs representing the key stages of a container update:
-// finding a new image, stopping the container, and starting the new container.
-// For monitor-only containers, it reports detection without action.
-//
-// Parameters:
-//   - c: The container report containing update details.
-//   - now: The current timestamp to use for all entries.
-//
-// Returns:
-//   - []*logrus.Entry: A slice of three log entries for the update events.
-func buildUpdateEntries(c types.ContainerReport, now time.Time) []*logrus.Entry {
-	if c.IsMonitorOnly() {
-		return []*logrus.Entry{
-			{
-				Level:   logrus.InfoLevel,
-				Message: FoundNewImageMessage,
-				Data: logrus.Fields{
-					"container":    c.Name(),
-					"image":        c.ImageName(),
-					"new_image_id": c.LatestImageID().ShortID(),
-				},
-				Time: now,
-			},
-			{
-				Level:   logrus.DebugLevel,
-				Message: UpdateSkippedMessage,
-				Data: logrus.Fields{
-					"container": c.Name(),
-				},
-				Time: now,
-			},
-			{
-				Level:   logrus.DebugLevel,
-				Message: ContainerRemainsRunningMessage,
-				Data: logrus.Fields{
-					"container": c.Name(),
-				},
-				Time: now,
-			},
-		}
-	}
-
-	return []*logrus.Entry{
-		{
-			Level:   logrus.InfoLevel,
-			Message: FoundNewImageMessage,
-			Data: logrus.Fields{
-				"container":    c.Name(),
-				"image":        c.ImageName(),
-				"new_image_id": c.LatestImageID().ShortID(),
-			},
-			Time: now,
-		},
-		{
-			Level:   logrus.InfoLevel,
-			Message: StoppingContainerMessage,
-			Data: logrus.Fields{
-				"container": c.Name(),
-				"id":        c.ID().ShortID(),
-				"old_id":    c.CurrentImageID().ShortID(),
-			},
-			Time: now,
-		},
-		{
-			Level:   logrus.InfoLevel,
-			Message: StartedNewContainerMessage,
-			Data: logrus.Fields{
-				"container":        c.Name(),
-				"new_container_id": c.ID().ShortID(),
-			},
-			Time: now,
-		},
-	}
-}
-
 // startNotifications initiates notification batching if a notifier is provided.
 //
 // It starts the notification process to group update messages, or logs a debug message
@@ -351,6 +175,43 @@ func executeUpdate(
 	logrus.Debug("Update function returned, about to check cleanup")
 
 	return result, cleanupImageInfos, err
+}
+
+// handleUpdateResult processes the result of an update operation and returns an appropriate metric.
+//
+// It checks for errors or nil results, logging accordingly, and returns a zero metric on failure
+// or nil on success to indicate continuation of the update process.
+//
+// Parameters:
+//   - result: The report from the update operation.
+//   - err: Any error encountered during the update.
+//
+// Returns:
+//   - *metrics.Metric: A zero metric if an error occurred or result is nil, nil otherwise.
+func handleUpdateResult(result types.Report, err error) *metrics.Metric {
+	// Check for errors during update execution
+	if err != nil {
+		logrus.WithError(err).Error("Update execution failed")
+
+		return &metrics.Metric{
+			Scanned: 0,
+			Updated: 0,
+			Failed:  0,
+		}
+	}
+
+	// Check if update result is nil
+	if result == nil {
+		logrus.Debug("Update result is nil, returning zero metric")
+
+		return &metrics.Metric{
+			Scanned: 0,
+			Updated: 0,
+			Failed:  0,
+		}
+	}
+
+	return nil
 }
 
 // performImageCleanup executes image cleanup if enabled.
@@ -443,6 +304,105 @@ func sendNotifications(
 
 			waitGroup.Wait()
 		}
+	}
+}
+
+// generateAndLogMetric creates a metric from the update results and logs it.
+//
+// It generates a summary metric of the session and logs the completion details.
+//
+// Parameters:
+//   - result: The report containing the results of the update operation.
+//
+// Returns:
+//   - *metrics.Metric: A pointer to a metric object summarizing the update session.
+func generateAndLogMetric(result types.Report) *metrics.Metric {
+	// Create metric from update results
+	metricResults := metrics.NewMetric(result)
+	// Log session completion with metric details
+	notifications.LocalLog.WithFields(logrus.Fields{
+		"scanned": metricResults.Scanned,
+		"updated": metricResults.Updated,
+		"failed":  metricResults.Failed,
+	}).Info("Update session completed")
+
+	return metricResults
+}
+
+// buildUpdateEntries constructs log entries for container update events.
+//
+// It creates three logrus.Entry structs representing the key stages of a container update:
+// finding a new image, stopping the container, and starting the new container.
+// For monitor-only containers, it reports detection without action.
+//
+// Parameters:
+//   - c: The container report containing update details.
+//   - now: The current timestamp to use for all entries.
+//
+// Returns:
+//   - []*logrus.Entry: A slice of three log entries for the update events.
+func buildUpdateEntries(c types.ContainerReport, now time.Time) []*logrus.Entry {
+	if c.IsMonitorOnly() {
+		return []*logrus.Entry{
+			{
+				Level:   logrus.InfoLevel,
+				Message: FoundNewImageMessage,
+				Data: logrus.Fields{
+					"container":    c.Name(),
+					"image":        c.ImageName(),
+					"new_image_id": c.LatestImageID().ShortID(),
+				},
+				Time: now,
+			},
+			{
+				Level:   logrus.DebugLevel,
+				Message: UpdateSkippedMessage,
+				Data: logrus.Fields{
+					"container": c.Name(),
+				},
+				Time: now,
+			},
+			{
+				Level:   logrus.DebugLevel,
+				Message: ContainerRemainsRunningMessage,
+				Data: logrus.Fields{
+					"container": c.Name(),
+				},
+				Time: now,
+			},
+		}
+	}
+
+	return []*logrus.Entry{
+		{
+			Level:   logrus.InfoLevel,
+			Message: FoundNewImageMessage,
+			Data: logrus.Fields{
+				"container":    c.Name(),
+				"image":        c.ImageName(),
+				"new_image_id": c.LatestImageID().ShortID(),
+			},
+			Time: now,
+		},
+		{
+			Level:   logrus.InfoLevel,
+			Message: StoppingContainerMessage,
+			Data: logrus.Fields{
+				"container": c.Name(),
+				"id":        c.ID().ShortID(),
+				"old_id":    c.CurrentImageID().ShortID(),
+			},
+			Time: now,
+		},
+		{
+			Level:   logrus.InfoLevel,
+			Message: StartedNewContainerMessage,
+			Data: logrus.Fields{
+				"container":        c.Name(),
+				"new_container_id": c.ID().ShortID(),
+			},
+			Time: now,
+		},
 	}
 }
 
@@ -624,24 +584,64 @@ func sendSplitNotifications(
 	logrus.Debug("Finished sending notifications")
 }
 
-// generateAndLogMetric creates a metric from the update results and logs it.
+// buildSingleContainerReport creates a SingleContainerReport for a specific updated container.
 //
-// It generates a summary metric of the session and logs the completion details.
+// It populates the report with the updated container as the primary item and includes
+// all other session results (scanned, failed, skipped, stale, fresh) for comprehensive context.
 //
 // Parameters:
-//   - result: The report containing the results of the update operation.
+//   - updatedContainer: The container that was updated.
+//   - result: The full session report containing all container statuses.
 //
 // Returns:
-//   - *metrics.Metric: A pointer to a metric object summarizing the update session.
-func generateAndLogMetric(result types.Report) *metrics.Metric {
-	// Create metric from update results
-	metricResults := metrics.NewMetric(result)
-	// Log session completion with metric details
-	notifications.LocalLog.WithFields(logrus.Fields{
-		"scanned": metricResults.Scanned,
-		"updated": metricResults.Updated,
-		"failed":  metricResults.Failed,
-	}).Info("Update session completed")
+//   - *session.SingleContainerReport: A report focused on the updated container with full session context.
+func buildSingleContainerReport(
+	updatedContainer types.ContainerReport,
+	result types.Report,
+) *session.SingleContainerReport {
+	return &session.SingleContainerReport{
+		UpdatedReports: []types.ContainerReport{updatedContainer},
+		ScannedReports: result.Scanned(),
+		FailedReports:  result.Failed(),
+		SkippedReports: result.Skipped(),
+		StaleReports:   result.Stale(),
+		FreshReports:   result.Fresh(),
+	}
+}
 
-	return metricResults
+// buildCleanupEntriesForContainer constructs log entries for cleaned image events specific to a container.
+//
+// It creates a logrus.Entry struct for each cleaned image associated with the specified container
+// using a standardized message "Removing image" with the image name and ID in the entry data.
+//
+// Parameters:
+//   - cleanedImages: Slice of CleanedImageInfo containing details of cleaned images.
+//   - containerName: Name of the container to filter cleanup entries for.
+//
+// Returns:
+//   - []*logrus.Entry: A slice of log entries for the cleaned images associated with the container.
+func buildCleanupEntriesForContainer(
+	cleanedImages []types.CleanedImageInfo,
+	containerName string,
+) []*logrus.Entry {
+	entries := make([]*logrus.Entry, 0)
+	now := time.Now()
+
+	for _, cleanedImage := range cleanedImages {
+		if cleanedImage.ContainerName == containerName {
+			entry := &logrus.Entry{
+				Level:   logrus.InfoLevel,
+				Message: "Removing image",
+				Data: logrus.Fields{
+					"container_name": cleanedImage.ContainerName,
+					"image_name":     cleanedImage.ImageName,
+					"image_id":       cleanedImage.ImageID.ShortID(),
+				},
+				Time: now,
+			}
+			entries = append(entries, entry)
+		}
+	}
+
+	return entries
 }
