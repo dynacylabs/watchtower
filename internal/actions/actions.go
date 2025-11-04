@@ -301,7 +301,7 @@ func buildUpdateEntries(c types.ContainerReport, now time.Time) []*logrus.Entry 
 			Message: StartedNewContainerMessage,
 			Data: logrus.Fields{
 				"container": c.Name(),
-				"new_id":    c.LatestImageID().ShortID(),
+				"new_id":    c.ID().ShortID(),
 			},
 			Time: now,
 		},
